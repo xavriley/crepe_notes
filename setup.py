@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 """The setup script."""
 
 from setuptools import setup, find_packages
@@ -10,9 +9,9 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = ['Click>=7.0', ]
+requirements = ['Click>=7.0', 'librosa>=0.7.2', 'numpy', 'pretty_midi']
 
-test_requirements = [ ]
+test_requirements = []
 
 setup(
     author="Xavier Riley",
@@ -28,7 +27,8 @@ setup(
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
     ],
-    description="Post-processing for CREPE to turn f0 pitch estimates into discrete notes e.g. MIDI",
+    description=
+    "Post-processing for CREPE to turn f0 pitch estimates into discrete notes e.g. MIDI",
     entry_points={
         'console_scripts': [
             'crepe_notes=crepe_notes.cli:main',
