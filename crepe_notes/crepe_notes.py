@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from .one_euro_filter import OneEuroFilter
 
 
-def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False):
+def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False, min_duration=0.11):
     y, sr = load(audio_path)
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     output_filename = f0_path.replace('.f0.csv', '')
@@ -66,7 +66,7 @@ def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False):
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
             'conf': np.median(conf[a:b]),
-            'transition_strength': 1-conf[b],
+            'transition_strength': 1-conf[a],
             'start_idx': a,
             'finish_idx': b,
         })
@@ -78,7 +78,7 @@ def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False):
         # if np.var(midi_pitch[a[1][0]:a[1][1]]) > 1:
         #     continue
 
-        if np.abs(a['pitch'] - b['pitch']) > 0.5 or a['transition_strength'] > 0.4:
+        if np.abs(a['pitch'] - b['pitch']) > 0.5: # or a['transition_strength'] > 0.4:
             sub_list.append(a)
             notes.append(sub_list)
             sub_list = []
@@ -99,7 +99,6 @@ def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False):
 
     min_scaled_velocity = 15
     min_median_confidence = 1
-    min_duration = 0.3
 
     # take the amplitudes within 6 sigma of the mean
     # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
@@ -123,7 +122,7 @@ def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False):
 
         valid_amplitude = scaled_max_amp > min_scaled_velocity
         valid_confidence = median_confidence > 0.1
-        valid_duration = (time_end - time_start) > 0.03
+        valid_duration = (time_end - time_start) > min_duration
 
         if valid_amplitude and valid_confidence and valid_duration:
             output_notes.append({
