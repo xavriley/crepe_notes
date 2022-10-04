@@ -7,11 +7,14 @@ import matplotlib.pyplot as plt
 from .one_euro_filter import OneEuroFilter
 
 
-def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.11):
+def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.04):
     y, sr = load(audio_path)
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     output_filename = f0_path.replace('.f0.csv', '')
     print(output_filename)
+    onsets_raw = np.load('./Sax.onsets.npz')['activations']
+    onsets = np.zeros_like(onsets_raw)
+    onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
 
     conf = np.nan_to_num(data['confidence'])
     t = list(range(0, len(conf)))
@@ -61,12 +64,29 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
     #     plt.vlines(conf_peaks[idx], 0, p)
     # plt.show()
 
+    # take the amplitudes within 6 sigma of the mean
+    # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
+    amp_mean = np.mean(amp_envelope)
+    amp_sd = np.std(amp_envelope)
+    filtered_amp_envelope = [x for x in amp_envelope if (x < amp_mean + 6 * amp_sd)]
+    global_max_amp = max(filtered_amp_envelope)
+    # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
+
+    min_scaled_velocity = 15
+    min_median_confidence = 1
+
     segment_list = []
     for a, b in zip(peaks, peaks[1:]):
+        a_samp = int(a * (sr * 0.01))
+        b_samp = int(b * (sr * 0.01))
+        max_amp = np.max(amp_envelope[a_samp:b_samp])
+        scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
+
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
             'conf': np.median(conf[a:b]),
             'transition_strength': 1-conf[a],
+            'amplitude': scaled_max_amp,
             'start_idx': a,
             'finish_idx': b,
         })
@@ -97,22 +117,14 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
     durations = []
     output_notes = []
 
-    min_scaled_velocity = 15
-    min_median_confidence = 1
-
-    # take the amplitudes within 6 sigma of the mean
-    # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
-    amp_mean = np.mean(amp_envelope)
-    amp_sd = np.std(amp_envelope)
-    filtered_amp_envelope = [x for x in amp_envelope if (x < amp_mean + 6 * amp_sd)]
-    global_max_amp = max(filtered_amp_envelope)
-    # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
-
     for x_s in notes:
-        median_pitch = np.median(np.array([y['pitch'] for y in x_s]))
-        median_confidence = np.median(np.array([y['conf'] for y in x_s]))
-        seg_start = x_s[0]['start_idx']
-        seg_end = x_s[-1]['finish_idx']
+        x_s_filt = [x for x in x_s if x['amplitude'] > min_scaled_velocity]
+        if len(x_s_filt) == 0:
+            continue
+        median_pitch = np.median(np.array([y['pitch'] for y in x_s_filt]))
+        median_confidence = np.median(np.array([y['conf'] for y in x_s_filt]))
+        seg_start = x_s_filt[0]['start_idx']
+        seg_end = x_s_filt[-1]['finish_idx']
         time_start = 0.01 * seg_start
         time_end = 0.01 * seg_end
         sample_start = time_to_samples(time_start, sr=sr)
@@ -120,19 +132,58 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         max_amp = np.max(amp_envelope[sample_start:sample_end])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
-        valid_amplitude = scaled_max_amp > min_scaled_velocity
-        valid_confidence = median_confidence > 0.1
-        valid_duration = (time_end - time_start) > min_duration
+        valid_amplitude = True # scaled_max_amp > min_scaled_velocity
+        valid_confidence = True # median_confidence > 0.1
+        valid_duration = True # (time_end - time_start) > min_duration
 
         if valid_amplitude and valid_confidence and valid_duration:
             output_notes.append({
                 'pitch': int(np.round(median_pitch)),
                 'velocity': round(scaled_max_amp),
-                'start': time_start,
-                'finish': time_end,
+                'start_idx': seg_start,
+                'finish_idx': seg_end,
                 'conf': median_confidence,
                 'transition_strength': x_s[-1]['transition_strength']
             })
+
+    onset_separated_notes = []
+    for n in output_notes:
+        n_s = n['start_idx']
+        n_f = n['finish_idx']
+
+        # if seg_s > 2000 and seg_f < 2700:
+        #     plt.plot(midi_pitch[n[0]['start_idx']:n[-1]['finish_idx']])
+        #     plt.vlines(seg_s - n[0]['start_idx'], 50, 70, 'r')
+        #     plt.vlines(seg_f - seg_s, 50, 70, 'r')
+        #     plt.plot(onsets[seg_s:seg_f] * 5 + 50)
+        #     plt.show()
+
+        last_onset = 0
+        if np.any(onsets[n_s:n_f] > 0.95):
+            onset_idxs_within_note = np.argwhere(onsets[n_s:n_f] > 0.95)
+            for idx in onset_idxs_within_note:
+                if idx[0] > last_onset + int(min_duration / 0.01):
+                    new_note = n.copy()
+                    new_note['start_idx'] = n_s + last_onset
+                    new_note['finish_idx'] = n_s + idx[0]
+                    onset_separated_notes.append(new_note)
+                    last_onset = idx[0]
+
+        # If there are no valid onsets within the range
+        # the following should append a copy of the original note,
+        # but if there were splits at onsets then it will also clean up any tails
+        # left in the sequence
+        new_note = n.copy()
+        new_note['start_idx'] = n_s + last_onset
+        new_note['finish_idx'] = n_f
+        onset_separated_notes.append(new_note)
+
+    timed_output_notes = []
+    for n in onset_separated_notes:
+        timed_note = n.copy()
+        timed_note['start'] = timed_note['start_idx'] * 0.01
+        timed_note['finish'] = timed_note['finish_idx'] * 0.01
+        timed_output_notes.append(timed_note)
 
     # import plotext as plttxt
     # print(f"max pitch: {np.unique([n['pitch'] for n in output_notes])}")
@@ -152,7 +203,7 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
     # plt.title('Durations')
     # plt.show()
 
-    for n in output_notes:
+    for n in timed_output_notes:
         instrument.notes.append(
             pm.Note(start=n['start'],
                     end=n['finish'],
