@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from .one_euro_filter import OneEuroFilter
 
 
-def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False, min_duration=0.11):
+def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.11):
     y, sr = load(audio_path)
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     output_filename = f0_path.replace('.f0.csv', '')
@@ -160,6 +160,6 @@ def process(f0_path, audio_path, sensitivity=0.002, use_smoothing=False, min_dur
                     velocity=n['velocity']))
 
     output_midi.instruments.append(instrument)
-    output_midi.write('%s.transcription.mid' % output_filename)
+    output_midi.write(f'{output_filename}.{output_label}.mid')
 
     return True
