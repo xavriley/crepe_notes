@@ -7,7 +7,8 @@ import pandas as pd
 def evaluate(midi_path='*.crepe_notes.mid', midi_replace_str='.crepe_notes.mid', output_label='crepe_notes'):
     results = []
 
-    for path in Path('./').rglob(midi_path):
+    paths = sorted(Path('./').rglob(midi_path))
+    for path in paths:
         print(f"{output_label}: {path}")
         est_path = str(path)
         ref_path = str(path).replace(midi_replace_str, '.mid')
@@ -32,4 +33,5 @@ def evaluate(midi_path='*.crepe_notes.mid', midi_replace_str='.crepe_notes.mid',
 
 # evaluate()
 # evaluate('Sax_vamp_pyin_pyin_notes.mid', '_vamp_pyin_pyin_notes.mid', 'pyin_notes')
-evaluate('Sax_basic_pitch.mid', '_basic_pitch.mid', 'basic_pitch')
+# evaluate('Sax_basic_pitch.mid', '_basic_pitch.mid', 'basic_pitch')
+evaluate('Sax.crepe_notes_with_onsets.mid', '.crepe_notes_with_onsets.mid', 'crepe_notes_with_onsets')

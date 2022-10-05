@@ -6,13 +6,19 @@ import pretty_midi as pm
 import matplotlib.pyplot as plt
 from .one_euro_filter import OneEuroFilter
 
+import os.path
+
 
 def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.04):
     y, sr = load(audio_path)
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     output_filename = f0_path.replace('.f0.csv', '')
     print(output_filename)
-    onsets_raw = np.load('./Sax.onsets.npz')['activations']
+    onsets_path = f0_path.replace('.f0.csv', '.onsets.npz')
+    if not os.path.exists(onsets_path):
+        print(f"Onsets file not found at {onsets_path}")
+        exit()
+    onsets_raw = np.load(onsets_path)['activations']
     onsets = np.zeros_like(onsets_raw)
     onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
 
