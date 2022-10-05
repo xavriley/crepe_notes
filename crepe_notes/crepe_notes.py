@@ -8,6 +8,13 @@ from .one_euro_filter import OneEuroFilter
 
 import os.path
 
+def steps_to_samples(step_val, sr, step_size=0.01):
+    return int(step_val * (sr * step_size))
+
+
+def samples_to_steps(sample_val, sr, step_size=0.01):
+    return int(sample_val / (sr * step_size))
+
 
 def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.04):
     y, sr = load(audio_path)
@@ -83,8 +90,8 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
 
     segment_list = []
     for a, b in zip(peaks, peaks[1:]):
-        a_samp = int(a * (sr * 0.01))
-        b_samp = int(b * (sr * 0.01))
+        a_samp = steps_to_samples(a, sr)
+        b_samp = steps_to_samples(b, sr)
         max_amp = np.max(amp_envelope[a_samp:b_samp])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
@@ -165,8 +172,8 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         #     plt.show()
 
         last_onset = 0
-        if np.any(onsets[n_s:n_f] > 0.95):
-            onset_idxs_within_note = np.argwhere(onsets[n_s:n_f] > 0.95)
+        if np.any(onsets[n_s:n_f] > 0.7):
+            onset_idxs_within_note = np.argwhere(onsets[n_s:n_f] > 0.7)
             for idx in onset_idxs_within_note:
                 if idx[0] > last_onset + int(min_duration / 0.01):
                     new_note = n.copy()
@@ -187,9 +194,38 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
     timed_output_notes = []
     for n in onset_separated_notes:
         timed_note = n.copy()
-        timed_note['start'] = timed_note['start_idx'] * 0.01
-        timed_note['finish'] = timed_note['finish_idx'] * 0.01
+
+        # Adjusting the start time to meet a minimum amp threshold
+        s = timed_note['start_idx']
+        f = timed_note['finish_idx']
+
+        if f - s > (min_duration / 0.01):
+            noise_floor = 0.01 # this will vary depending on the signal
+            s_samp = steps_to_samples(s, sr)
+            f_samp = steps_to_samples(f, sr)
+            s_adj_samp_idx = s_samp + np.where(amp_envelope[s_samp:f_samp] > noise_floor)[0][0]
+            s_adj = samples_to_steps(s_adj_samp_idx, sr)
+
+            f_adj_samp_idx = f_samp - np.where(np.flip(amp_envelope[s_samp:f_samp]) > noise_floor)[0][0]
+            if f_adj_samp_idx > f_samp or f_adj_samp_idx < 1:
+                print("something has gone wrong")
+
+            f_adj = samples_to_steps(f_adj_samp_idx, sr)
+            if f_adj > f or f_adj < 1:
+                print("something has gone more wrong")
+
+            timed_note['start'] = s_adj * 0.01
+            timed_note['finish'] = f_adj * 0.01
+        else:
+            timed_note['start'] = s * 0.01
+            timed_note['finish'] = f * 0.01
         timed_output_notes.append(timed_note)
+
+    # s = 1400
+    # f = 1425
+    # plt.plot(amp_envelope[steps_to_samples(s, sr):steps_to_samples(f, sr)])
+    # plt.hlines(1, timed_output_notes[0]['start_idx'] - s, f, alpha=0.5)
+    # plt.plot()
 
     # import plotext as plttxt
     # print(f"max pitch: {np.unique([n['pitch'] for n in output_notes])}")
