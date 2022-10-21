@@ -200,13 +200,21 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         f = timed_note['finish_idx']
 
         if f - s > (min_duration / 0.01):
-            noise_floor = 0.01 # this will vary depending on the signal
+            noise_floor = 0.01  # this will vary depending on the signal
             s_samp = steps_to_samples(s, sr)
             f_samp = steps_to_samples(f, sr)
-            s_adj_samp_idx = s_samp + np.where(amp_envelope[s_samp:f_samp] > noise_floor)[0][0]
+            s_adj_samp_all = s_samp + np.where(
+                amp_envelope[s_samp:f_samp] > noise_floor)[0]
+
+            if len(s_adj_samp_all) > 0:
+                s_adj_samp_idx = s_adj_samp_all[0]
+            else:
+                continue
+
             s_adj = samples_to_steps(s_adj_samp_idx, sr)
 
-            f_adj_samp_idx = f_samp - np.where(np.flip(amp_envelope[s_samp:f_samp]) > noise_floor)[0][0]
+            f_adj_samp_idx = f_samp - np.where(
+                np.flip(amp_envelope[s_samp:f_samp]) > noise_floor)[0][0]
             if f_adj_samp_idx > f_samp or f_adj_samp_idx < 1:
                 print("something has gone wrong")
 
@@ -216,10 +224,10 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
 
             timed_note['start'] = s_adj * 0.01
             timed_note['finish'] = f_adj * 0.01
+            timed_output_notes.append(timed_note)
         else:
             timed_note['start'] = s * 0.01
             timed_note['finish'] = f * 0.01
-        timed_output_notes.append(timed_note)
 
     # s = 1400
     # f = 1425
