@@ -8,6 +8,7 @@ from .one_euro_filter import OneEuroFilter
 
 import os.path
 
+
 def steps_to_samples(step_val, sr, step_size=0.01):
     return int(step_val * (sr * step_size))
 
@@ -16,11 +17,16 @@ def samples_to_steps(sample_val, sr, step_size=0.01):
     return int(sample_val / (sr * step_size))
 
 
-def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002, use_smoothing=False, min_duration=0.04):
-    y, sr = load(audio_path)
+def process(f0_path,
+            audio_path,
+            output_label="transcription",
+            sensitivity=0.002,
+            use_smoothing=False,
+            min_duration=0.04):
+    y, sr = load(audio_path, sr=None)
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     output_filename = f0_path.replace('.f0.csv', '')
-    print(output_filename)
+    print(os.path.abspath(f0_path))
     onsets_path = f0_path.replace('.f0.csv', '.onsets.npz')
     if not os.path.exists(onsets_path):
         print(f"Onsets file not found at {onsets_path}")
@@ -38,31 +44,38 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         beta = 0.7
         smooth_conf = np.zeros_like(conf)
         smooth_conf[0] = conf[0]
-        one_euro_filter = OneEuroFilter(
-            t[0], conf[0],
-            min_cutoff=min_cutoff,
-            beta=beta
-        )
+        one_euro_filter = OneEuroFilter(t[0],
+                                        conf[0],
+                                        min_cutoff=min_cutoff,
+                                        beta=beta)
         for i in range(1, len(t)):
             smooth_conf[i] = one_euro_filter(t[i], conf[i])
 
     freqs = np.nan_to_num(data['frequency'])
     amp_envelope = np.abs(hilbert(y))
 
-    tuning_offset = pitch_tuning(freqs)
-    print(f"Tuning offset: {tuning_offset * 100} cents")
+    use_tuning = False
+    if use_tuning:
+        tuning_offset = pitch_tuning(freqs)
+        print(f"Tuning offset: {tuning_offset * 100} cents")
+    else:
+        tuning_offset = 0
 
     midi_pitch = np.nan_to_num(hz_to_midi(freqs) - tuning_offset, neginf=0)
     pitch_changes = np.abs(np.gradient(midi_pitch))
-    pitch_changes = np.interp(pitch_changes, (pitch_changes.min(), pitch_changes.max()), (0, 1))
+    pitch_changes = np.interp(pitch_changes,
+                              (pitch_changes.min(), pitch_changes.max()),
+                              (0, 1))
 
-    conf_peaks, conf_peak_properties = find_peaks(1-conf,
-                                        distance=4,
-                                        prominence=sensitivity)
+    conf_peaks, conf_peak_properties = find_peaks(1 - conf,
+                                                  distance=4,
+                                                  prominence=sensitivity)
     conf_prominences = conf_peak_properties["prominences"]
 
     change_point_signal = (1 - conf) * pitch_changes
-    change_point_signal = np.interp(change_point_signal, (change_point_signal.min(), change_point_signal.max()), (0, 1))
+    change_point_signal = np.interp(
+        change_point_signal,
+        (change_point_signal.min(), change_point_signal.max()), (0, 1))
     peaks, peak_properties = find_peaks(change_point_signal,
                                         distance=4,
                                         prominence=sensitivity)
@@ -98,7 +111,7 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
             'conf': np.median(conf[a:b]),
-            'transition_strength': 1-conf[a],
+            'transition_strength': 1 - conf[a],
             'amplitude': scaled_max_amp,
             'start_idx': a,
             'finish_idx': b,
@@ -111,7 +124,8 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         # if np.var(midi_pitch[a[1][0]:a[1][1]]) > 1:
         #     continue
 
-        if np.abs(a['pitch'] - b['pitch']) > 0.5: # or a['transition_strength'] > 0.4:
+        if np.abs(a['pitch'] -
+                  b['pitch']) > 0.5:  # or a['transition_strength'] > 0.4:
             sub_list.append(a)
             notes.append(sub_list)
             sub_list = []
@@ -145,18 +159,24 @@ def process(f0_path, audio_path, output_label="transcription", sensitivity=0.002
         max_amp = np.max(amp_envelope[sample_start:sample_end])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
-        valid_amplitude = True # scaled_max_amp > min_scaled_velocity
-        valid_confidence = True # median_confidence > 0.1
-        valid_duration = True # (time_end - time_start) > min_duration
+        valid_amplitude = True  # scaled_max_amp > min_scaled_velocity
+        valid_confidence = True  # median_confidence > 0.1
+        valid_duration = True  # (time_end - time_start) > min_duration
 
         if valid_amplitude and valid_confidence and valid_duration:
             output_notes.append({
-                'pitch': int(np.round(median_pitch)),
-                'velocity': round(scaled_max_amp),
-                'start_idx': seg_start,
-                'finish_idx': seg_end,
-                'conf': median_confidence,
-                'transition_strength': x_s[-1]['transition_strength']
+                'pitch':
+                int(np.round(median_pitch)),
+                'velocity':
+                round(scaled_max_amp),
+                'start_idx':
+                seg_start,
+                'finish_idx':
+                seg_end,
+                'conf':
+                median_confidence,
+                'transition_strength':
+                x_s[-1]['transition_strength']
             })
 
     onset_separated_notes = []
