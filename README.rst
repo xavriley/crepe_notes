@@ -45,13 +45,8 @@ Doesn't handle repeated notes well. This is also more likely to produce spurious
 Roadmap
 -------
 
--[ ] Handle repeated notes better
--[ ] Allow filtering by minimum velocity/amplitude
--[ ] Allow filtering by minimum note length
--[ ] Optionally output activation graphs
--[ ] Add option to output CSV format
--[ ] (Distant goal) Add UI to aid with picking thresholds for velocity and note length
--[ ] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
+-[] (Distant goal) Add UI to aid with picking thresholds for velocity and note length
+-[] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
 
 Credits
 -------
