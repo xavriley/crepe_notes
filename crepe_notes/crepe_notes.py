@@ -94,7 +94,8 @@ def process(f0_path,
     # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
     amp_mean = np.mean(amp_envelope)
     amp_sd = np.std(amp_envelope)
-    filtered_amp_envelope = [x for x in amp_envelope if (x < amp_mean + 6 * amp_sd)]
+    filtered_amp_envelope = amp_envelope.copy()
+    filtered_amp_envelope[filtered_amp_envelope > amp_mean + (6 * amp_sd)] = 0
     global_max_amp = max(filtered_amp_envelope)
     # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
 
