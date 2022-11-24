@@ -1,12 +1,13 @@
 """Main module."""
 from librosa import load, pitch_tuning, hz_to_midi, time_to_samples
-from scipy.signal import find_peaks, hilbert
+from scipy.signal import find_peaks, hilbert, peak_widths
 import numpy as np
 import pretty_midi as pm
 import matplotlib.pyplot as plt
 from .one_euro_filter import OneEuroFilter
 
 import os.path
+from pathlib import Path
 
 
 def steps_to_samples(step_val, sr, step_size=0.01):
@@ -17,25 +18,52 @@ def samples_to_steps(sample_val, sr, step_size=0.01):
     return int(sample_val / (sr * step_size))
 
 
+def parse_f0(f0_path):
+    data = np.genfromtxt(f0_path, delimiter=',', names=True)
+    return np.nan_to_num(data['frequency']), np.nan_to_num(data['confidence'])
+
+
+def freqs_to_midi(freqs, tuning_offset=0):
+    return np.nan_to_num(hz_to_midi(freqs) - tuning_offset, neginf=0)
+
+
+def calculate_tuning_offset(freqs):
+    tuning_offset = pitch_tuning(freqs)
+    print(f"Tuning offset: {tuning_offset * 100} cents")
+    return tuning_offset
+
+
 def process(f0_path,
             audio_path,
             output_label="transcription",
-            sensitivity=0.002,
+            sensitivity=0.001,
             use_smoothing=False,
-            min_duration=0.04):
+            min_duration=0.03,
+            min_velocity=6,
+            disable_splitting=False,
+            use_cwd=True,
+            tuning_offset=False):
     y, sr = load(audio_path, sr=None)
-    data = np.genfromtxt(f0_path, delimiter=',', names=True)
-    output_filename = f0_path.replace('.f0.csv', '')
-    print(os.path.abspath(f0_path))
-    onsets_path = f0_path.replace('.f0.csv', '.onsets.npz')
-    if not os.path.exists(onsets_path):
-        print(f"Onsets file not found at {onsets_path}")
-        exit()
-    onsets_raw = np.load(onsets_path)['activations']
-    onsets = np.zeros_like(onsets_raw)
-    onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
+    freqs, conf = parse_f0(f0_path)
 
-    conf = np.nan_to_num(data['confidence'])
+    if use_cwd:
+        # write to location that the bin was run from
+        output_filename = Path(f0_path.replace('.f0.csv', '')).name
+    else:
+        # write to same folder as the orignal f0.csv
+        output_filename = f0_path.replace('.f0.csv', '')
+
+    print(os.path.abspath(f0_path))
+
+    if not disable_splitting:
+        onsets_path = f0_path.replace('.f0.csv', '.onsets.npz')
+        if not os.path.exists(onsets_path):
+            print(f"Onsets file not found at {onsets_path}")
+            exit()
+        onsets_raw = np.load(onsets_path)['activations']
+        onsets = np.zeros_like(onsets_raw)
+        onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
+
     t = list(range(0, len(conf)))
 
     if use_smoothing:
@@ -51,17 +79,14 @@ def process(f0_path,
         for i in range(1, len(t)):
             smooth_conf[i] = one_euro_filter(t[i], conf[i])
 
-    freqs = np.nan_to_num(data['frequency'])
     amp_envelope = np.abs(hilbert(y))
 
-    use_tuning = False
-    if use_tuning:
-        tuning_offset = pitch_tuning(freqs)
-        print(f"Tuning offset: {tuning_offset * 100} cents")
+    if tuning_offset == False:
+        tuning_offset = calculate_tuning_offset(freqs)
     else:
-        tuning_offset = 0
+        tuning_offset = tuning_offset / 100
 
-    midi_pitch = np.nan_to_num(hz_to_midi(freqs) - tuning_offset, neginf=0)
+    midi_pitch = freqs_to_midi(freqs, tuning_offset)
     pitch_changes = np.abs(np.gradient(midi_pitch))
     pitch_changes = np.interp(pitch_changes,
                               (pitch_changes.min(), pitch_changes.max()),
@@ -79,6 +104,21 @@ def process(f0_path,
     peaks, peak_properties = find_peaks(change_point_signal,
                                         distance=4,
                                         prominence=sensitivity)
+    _, _, transition_starts, transition_ends  = peak_widths(change_point_signal, peaks, rel_height=0.5)
+    transitions = list(zip(np.round(transition_starts), np.round(transition_ends)))
+    note_starts = [0] + list(map(int, np.round(transition_ends)))
+    note_ends = list(map(int, np.round(transition_starts))) + [len(change_point_signal) + 1]
+    note_regions = list(zip(note_starts, note_ends))
+
+    show_plots = False
+    if show_plots:
+        fig, axs = plt.subplots(2, 1, sharex=True)
+        axs[0].plot(midi_pitch)
+        [axs[0].fill_between(x, 56, 75, alpha=0.5) for x in note_regions]
+        axs[1].plot(change_point_signal)
+        axs[1].plot(peaks, change_point_signal[peaks], 'x')
+        plt.show()
+
     prominences = peak_properties["prominences"]
 
     # scaled_midi_pitch = np.interp(midi_pitch, (0, 127), (0, 1))
@@ -99,20 +139,30 @@ def process(f0_path,
     global_max_amp = max(filtered_amp_envelope)
     # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
 
-    min_scaled_velocity = 15
     min_median_confidence = 1
 
     segment_list = []
-    for a, b in zip(peaks, peaks[1:]):
+    # for a, b in zip(peaks, peaks[1:]):
+    for a, b in note_regions:
+        # Handle an edge case where rounding could cause
+        # an end index for a note to be before the start index
+        if a > b:
+            continue
+        elif b - a <= 1:
+            continue
+
         a_samp = steps_to_samples(a, sr)
         b_samp = steps_to_samples(b, sr)
+
+        note_amp = amp_envelope[a_samp:b_samp]
+
         max_amp = np.max(amp_envelope[a_samp:b_samp])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
             'conf': np.median(conf[a:b]),
-            'transition_strength': 1 - conf[a],
+            'transition_strength': 1 - conf[a], # this no longer makes sense
             'amplitude': scaled_max_amp,
             'start_idx': a,
             'finish_idx': b,
@@ -146,7 +196,7 @@ def process(f0_path,
     output_notes = []
 
     for x_s in notes:
-        x_s_filt = [x for x in x_s if x['amplitude'] > min_scaled_velocity]
+        x_s_filt = [x for x in x_s if x['amplitude'] > min_velocity]
         if len(x_s_filt) == 0:
             continue
         median_pitch = np.median(np.array([y['pitch'] for y in x_s_filt]))
@@ -160,60 +210,62 @@ def process(f0_path,
         max_amp = np.max(amp_envelope[sample_start:sample_end])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
-        valid_amplitude = True  # scaled_max_amp > min_scaled_velocity
+        valid_amplitude = True  # scaled_max_amp > min_velocity
         valid_confidence = True  # median_confidence > 0.1
         valid_duration = True  # (time_end - time_start) > min_duration
 
         if valid_amplitude and valid_confidence and valid_duration:
             output_notes.append({
                 'pitch':
-                int(np.round(median_pitch)),
+                    int(np.round(median_pitch)),
                 'velocity':
-                round(scaled_max_amp),
+                    round(scaled_max_amp),
                 'start_idx':
-                seg_start,
+                    seg_start,
                 'finish_idx':
-                seg_end,
+                    seg_end,
                 'conf':
-                median_confidence,
+                    median_confidence,
                 'transition_strength':
-                x_s[-1]['transition_strength']
+                    x_s[-1]['transition_strength']
             })
 
-    onset_separated_notes = []
-    for n in output_notes:
-        n_s = n['start_idx']
-        n_f = n['finish_idx']
+    if not disable_splitting:
+        onset_separated_notes = []
+        for n in output_notes:
+            n_s = n['start_idx']
+            n_f = n['finish_idx']
 
-        # if seg_s > 2000 and seg_f < 2700:
-        #     plt.plot(midi_pitch[n[0]['start_idx']:n[-1]['finish_idx']])
-        #     plt.vlines(seg_s - n[0]['start_idx'], 50, 70, 'r')
-        #     plt.vlines(seg_f - seg_s, 50, 70, 'r')
-        #     plt.plot(onsets[seg_s:seg_f] * 5 + 50)
-        #     plt.show()
+            # if seg_s > 2000 and seg_f < 2700:
+            #     plt.plot(midi_pitch[n[0]['start_idx']:n[-1]['finish_idx']])
+            #     plt.vlines(seg_s - n[0]['start_idx'], 50, 70, 'r')
+            #     plt.vlines(seg_f - seg_s, 50, 70, 'r')
+            #     plt.plot(onsets[seg_s:seg_f] * 5 + 50)
+            #     plt.show()
 
-        last_onset = 0
-        if np.any(onsets[n_s:n_f] > 0.7):
-            onset_idxs_within_note = np.argwhere(onsets[n_s:n_f] > 0.7)
-            for idx in onset_idxs_within_note:
-                if idx[0] > last_onset + int(min_duration / 0.01):
-                    new_note = n.copy()
-                    new_note['start_idx'] = n_s + last_onset
-                    new_note['finish_idx'] = n_s + idx[0]
-                    onset_separated_notes.append(new_note)
-                    last_onset = idx[0]
+            last_onset = 0
+            if np.any(onsets[n_s:n_f] > 0.7):
+                onset_idxs_within_note = np.argwhere(onsets[n_s:n_f] > 0.7)
+                for idx in onset_idxs_within_note:
+                    if idx[0] > last_onset + int(min_duration / 0.01):
+                        new_note = n.copy()
+                        new_note['start_idx'] = n_s + last_onset
+                        new_note['finish_idx'] = n_s + idx[0]
+                        onset_separated_notes.append(new_note)
+                        last_onset = idx[0]
 
-        # If there are no valid onsets within the range
-        # the following should append a copy of the original note,
-        # but if there were splits at onsets then it will also clean up any tails
-        # left in the sequence
-        new_note = n.copy()
-        new_note['start_idx'] = n_s + last_onset
-        new_note['finish_idx'] = n_f
-        onset_separated_notes.append(new_note)
+            # If there are no valid onsets within the range
+            # the following should append a copy of the original note,
+            # but if there were splits at onsets then it will also clean up any tails
+            # left in the sequence
+            new_note = n.copy()
+            new_note['start_idx'] = n_s + last_onset
+            new_note['finish_idx'] = n_f
+            onset_separated_notes.append(new_note)
+            output_notes = onset_separated_notes
 
     timed_output_notes = []
-    for n in onset_separated_notes:
+    for n in output_notes:
         timed_note = n.copy()
 
         # Adjusting the start time to meet a minimum amp threshold
@@ -275,6 +327,9 @@ def process(f0_path,
     # plt.show()
 
     for n in timed_output_notes:
+        if n['start'] >= n['finish']:
+            continue
+
         instrument.notes.append(
             pm.Note(start=n['start'],
                     end=n['finish'],
