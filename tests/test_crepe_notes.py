@@ -61,6 +61,7 @@ class TestCrepe_notes(unittest.TestCase):
             if n.pitch < lowest_note:
                 lowest_note = n.pitch
             latest_note_end = n.end
+            ax.axvline(n.start, alpha=0.5)
 
         for n in gt:
             ax.add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='r', alpha=0.5))
@@ -201,7 +202,7 @@ class TestCrepe_notes(unittest.TestCase):
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'attya-monster-lick.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, min_velocity=15, use_cwd=True)
+            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
             assert result_mid_path.exists()
 
             print(result_mid_path)
@@ -211,3 +212,24 @@ class TestCrepe_notes(unittest.TestCase):
             score = metrics['F-measure_no_offset']
 
             assert score > 0.85
+            assert score < 0.86
+
+    def test_process_charlie_parker(self):
+        """Test on slurred repeated notes"""
+        f0_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.f0.csv')
+        wav_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.wav')
+        gt_transcription = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.gt.mid')
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes.transcription.mid')
+            self.assertFalse(result_mid_path.exists())
+            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
+            assert result_mid_path.exists()
+
+            # print(result_mid_path)
+            self.plot_results(result_mid_path, gt_transcription, f0_path)
+
+            metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
+            score = metrics['F-measure_no_offset']
+
+            assert score > 0.78 and score < 0.79
