@@ -227,9 +227,29 @@ class TestCrepe_notes(unittest.TestCase):
             assert result_mid_path.exists()
 
             # print(result_mid_path)
-            self.plot_results(result_mid_path, gt_transcription, f0_path)
+            # self.plot_results(result_mid_path, gt_transcription, f0_path)
 
             metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
             score = metrics['F-measure_no_offset']
 
             assert score > 0.78 and score < 0.79
+
+    def test_process_slurs(self):
+        """Test on slurred notes a semitone apart"""
+        f0_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.f0.csv')
+        wav_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.wav')
+        gt_transcription = Path(TEST_DIR, 'attya_filosax_part_4_slurs.gt.mid')
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result_mid_path = Path(os.getcwd(), 'attya_filosax_part_4_slurs.transcription.mid')
+            self.assertFalse(result_mid_path.exists())
+            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
+            assert result_mid_path.exists()
+
+            # print(result_mid_path)
+            # self.plot_results(result_mid_path, gt_transcription, f0_path)
+
+            metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
+            score = metrics['F-measure_no_offset']
+
+            assert score > 0.75 and score < 0.76

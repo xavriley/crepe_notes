@@ -12,7 +12,7 @@ from .crepe_notes import process
 @click.option('--disable-splitting', is_flag=True, default=False, help='Disable detection of repeated notes via onset detection')
 @click.option('--tuning-offset', type=click.FloatRange(-100, 100, clamp=True), default=False, help='Manually apply a tuning offset in cents. Fractional numbers are allowed. Set to 0 for no offset, otherwise it will be calculated automatically.')
 @click.option('--use-smoothing', is_flag=True, default=False, help='Enable smoothing of confidence')
-@click.option('--use-cwd', is_flag=True, default=True, help='If True, write to the cwd of the current command, else write to the parent folder of the f0_path')
+@click.option('--use-cwd', is_flag=True, default=False, help='If True, write to the cwd of the current command, else write to the parent folder of the f0_path')
 @click.argument('f0_path', type=click.Path(exists=True))
 @click.argument('audio_path', type=click.Path(exists=True))
 @click.help_option()

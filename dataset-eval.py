@@ -16,7 +16,7 @@ def evaluate(midi_path='*.crepe_notes.mid',
     for path in paths:
         print(f"{output_label}: {path}")
         est_path = str(path)
-        ref_path = str(path).replace(midi_replace_str, '.gt.mid')
+        ref_path = str(path).replace(midi_replace_str, '.mid')
 
         ref = pm.PrettyMIDI(ref_path)
         est = pm.PrettyMIDI(est_path)
@@ -75,5 +75,5 @@ def evaluate(midi_path='*.crepe_notes.mid',
 #          '.crepe_notes-min-dur-25ms-no-tuning.mid',
 #          'crepe_notes-min-dur-25ms-no-tuning')
 # evaluate('*_vamp_pyin_pyin_notes.mid', '_vamp_pyin_pyin_notes.mid', 'pyin_notes')
-evaluate('*.cn_25ms_min_tiny.mid', '.cn_25ms_min_tiny.mid', 'crepe_notes-min-dur-25ms-tiny')
+evaluate('*.cn_transition_a.mid', '.cn_transition_a.mid', 'crepe_notes-transitions-a')
 
