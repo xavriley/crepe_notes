@@ -45,36 +45,44 @@ class TestCrepe_notes(unittest.TestCase):
         pred = self.midi_notes(predicted_mid)
         gt = self.midi_notes(gt_mid)
 
-        fig, ax = plt.subplots(1, 1, sharex=True, sharey=True)
+        fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
 
         midi_pitch = self.midi_contour_from_f0(f0_path)
         t = np.arange(0, len(midi_pitch)) * 0.01
 
-        plt.plot(t, midi_pitch, '-', color='b')
+        ax[0].plot(t, midi_pitch, '-', color='b')
+        ax[1].plot(t, midi_pitch, '-', color='b')
 
         latest_note_end = 0
         highest_note = 0
         lowest_note = 127
         for n in pred:
-            ax.add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='g', alpha=0.5))
+            ax[0].add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='g', alpha=0.5))
             if n.pitch > highest_note:
                 highest_note = n.pitch
             if n.pitch < lowest_note:
                 lowest_note = n.pitch
             latest_note_end = n.end
-            ax.axvline(n.start, alpha=0.5)
+            ax[0].axvline(n.start, alpha=0.5)
 
         for n in gt:
-            ax.add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='r', alpha=0.5))
+            ax[1].add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='r', alpha=0.5))
             if n.pitch > highest_note:
                 highest_note = n.pitch
             if n.pitch < lowest_note:
                 lowest_note = n.pitch
             latest_note_end = n.end
+            ax[1].axvline(n.start, alpha=0.5)
 
         # need to set axis limits manually
-        ax.set_xlim(0, latest_note_end + 0.2)
-        ax.set_ylim(lowest_note - 3, highest_note + 3)
+        ax[0].set_xlim(0, latest_note_end + 0.2)
+        ax[0].set_ylim(lowest_note - 3, highest_note + 3)
+
+        ax[1].set_xlim(0, latest_note_end + 0.2)
+        ax[1].set_ylim(lowest_note - 3, highest_note + 3)
+        
+        ax[0].set_title('Predicted')
+        ax[1].set_title('Ground Truth')
 
         plt.show()
         return
@@ -289,6 +297,30 @@ class TestCrepe_notes(unittest.TestCase):
 
             assert score > 0.78 and score < 0.79
     
+    def test_fallback_onset_detection(self):
+        # duplicate charlie parker file but rename and delete onsets.npz
+        """Test on slurred repeated notes"""
+        f0_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.f0.csv')
+        wav_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.wav')
+        gt_transcription = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.gt.mid')
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes_no_onsets.transcription.mid')
+            self.assertFalse(result_mid_path.exists())
+            
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.045, use_cwd=True)
+            assert result_mid_path.exists()
+
+            # print(result_mid_path)
+            # self.plot_results(result_mid_path, gt_transcription, f0_path)
+
+            metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
+            score = metrics['F-measure_no_offset']
+
+            assert score > 0.66 and score < 0.67
+
     def test_filosax_full(self):
         """Get results for full Filosax dataset"""
 

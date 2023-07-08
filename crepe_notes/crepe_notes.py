@@ -52,12 +52,14 @@ def process(freqs,
         filtered_amp_envelope = np.load(cached_amp_envelope_path, allow_pickle=True)['filtered_amp_envelope']
         # sr = get_samplerate(audio_path)
         sr = 44100 # TODO: this is just to make tests work and could lead to confusion
+        y = None
     else:
         try:
             y, sr = load(str(audio_path), sr=None)
         except:
             print("Error loading audio file. Amplitudes will be set to 80")
             detect_amplitude = False
+            y = None
             pass
 
         amp_envelope = np.abs(hilbert(y))
@@ -82,10 +84,21 @@ def process(freqs,
         onsets_path = str(audio_path.with_suffix('.onsets.npz'))
         if not os.path.exists(onsets_path):
             print(f"Onsets file not found at {onsets_path}")
-            exit()
-        onsets_raw = np.load(onsets_path, allow_pickle=True)['activations']
-        onsets = np.zeros_like(onsets_raw)
-        onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
+            print("Running onset detection...")
+            
+            if y is None:
+                y, sr = load(str(audio_path), sr=None)
+            
+            onsets = onset.onset_detect(y, sr=sr, backtrack=False, hop_length=sr//100,
+                                        delta=0.075, wait=min_duration + 0.01)
+            onsets_raw = np.zeros_like(freqs)
+            onsets_raw[onsets] = 1
+            onsets = onsets_raw
+        else:
+            print(f"Loading onsets from {onsets_path}")
+            onsets_raw = np.load(onsets_path, allow_pickle=True)['activations']
+            onsets = np.zeros_like(onsets_raw)
+            onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
 
     t = list(range(0, len(conf)))
 
