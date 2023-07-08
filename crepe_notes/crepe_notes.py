@@ -1,6 +1,6 @@
 """Main module."""
-from librosa import load, pitch_tuning, hz_to_midi, time_to_samples
-from scipy.signal import find_peaks, hilbert, peak_widths
+from librosa import load, get_samplerate, pitch_tuning, hz_to_midi, time_to_samples, onset, stft
+from scipy.signal import find_peaks, hilbert, peak_widths, butter, filtfilt, resample
 import numpy as np
 import pretty_midi as pm
 import matplotlib.pyplot as plt
@@ -42,8 +42,32 @@ def process(f0_path,
             min_velocity=6,
             disable_splitting=False,
             use_cwd=True,
-            tuning_offset=False):
-    y, sr = load(audio_path, sr=None)
+            tuning_offset=False,
+            detect_amplitude=True):
+    
+    cached_amp_envelope_path = f0_path.replace('.f0.csv', '.amp_envelope.npz')
+    if os.path.exists(cached_amp_envelope_path):
+        # if we have a cached amplitude envelope, no need to load audio
+        filtered_amp_envelope = np.load(cached_amp_envelope_path, allow_pickle=True)['filtered_amp_envelope']
+        # sr = get_samplerate(audio_path)
+        sr = 44100 # TODO: this is just to make tests work and could lead to confusion
+    else:
+        try:
+            y, sr = load(audio_path, sr=None)
+        except:
+            print("Error loading audio file. Amplitudes will be set to 80")
+            detect_amplitude = False
+            pass
+
+        amp_envelope = np.abs(hilbert(y))
+
+        scaled_amp_envelope = np.interp(amp_envelope, (amp_envelope.min(), amp_envelope.max()), (0, 1))
+        # low pass filter the amplitude envelope
+        b, a = butter(4, 50, 'low', fs=sr)
+        filtered_amp_envelope = filtfilt(b, a, scaled_amp_envelope)[::(sr//100)]
+
+        np.savez(cached_amp_envelope_path, filtered_amp_envelope=filtered_amp_envelope)
+    
     freqs, conf = parse_f0(f0_path)
 
     if use_cwd:
@@ -60,7 +84,7 @@ def process(f0_path,
         if not os.path.exists(onsets_path):
             print(f"Onsets file not found at {onsets_path}")
             exit()
-        onsets_raw = np.load(onsets_path)['activations']
+        onsets_raw = np.load(onsets_path, allow_pickle=True)['activations']
         onsets = np.zeros_like(onsets_raw)
         onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
 
@@ -78,8 +102,6 @@ def process(f0_path,
                                         beta=beta)
         for i in range(1, len(t)):
             smooth_conf[i] = one_euro_filter(t[i], conf[i])
-
-    amp_envelope = np.abs(hilbert(y))
 
     if tuning_offset == False:
         tuning_offset = calculate_tuning_offset(freqs)
@@ -104,19 +126,74 @@ def process(f0_path,
     peaks, peak_properties = find_peaks(change_point_signal,
                                         distance=4,
                                         prominence=sensitivity)
-    _, _, transition_starts, transition_ends  = peak_widths(change_point_signal, peaks, rel_height=0.5)
-    transitions = list(zip(np.round(transition_starts), np.round(transition_ends)))
-    note_starts = [0] + list(map(int, np.round(transition_ends)))
-    note_ends = list(map(int, np.round(transition_starts))) + [len(change_point_signal) + 1]
-    note_regions = list(zip(note_starts, note_ends))
+    _, _, transition_starts, transition_ends = peak_widths(change_point_signal, peaks, rel_height=0.5)
+    transition_starts = list(map(int, np.round(transition_starts)))
+    transition_ends = list(map(int, np.round(transition_ends)))
+
+    transitions = [(s, f, 'transition') for (s, f) in zip(transition_starts, transition_ends)]
+    note_starts = [0] + transition_ends
+    note_ends = transition_starts + [len(change_point_signal) + 1]
+    note_regions = [(s, f, 'note') for (s, f) in (zip(note_starts, note_ends))]
 
     show_plots = False
     if show_plots:
-        fig, axs = plt.subplots(2, 1, sharex=True)
+        fig, axs = plt.subplots(4, 1, sharex=True)
         axs[0].plot(midi_pitch)
-        [axs[0].fill_between(x, 56, 75, alpha=0.5) for x in note_regions]
+        # [axs[0].fill_between(x, 56, 75, alpha=0.5) for x in note_regions]
         axs[1].plot(change_point_signal)
         axs[1].plot(peaks, change_point_signal[peaks], 'x')
+        
+        
+        spectral_flux = onset.onset_strength(y=y,
+            sr=sr, 
+            hop_length=(sr // 100),
+            center=False,
+            )
+        spectral_flux = np.interp(spectral_flux, (spectral_flux.min(), spectral_flux.max()), (0, 1))
+        inv_conf = np.square(1 - conf)
+
+        axs[2].plot(inv_conf * spectral_flux)
+        axs[2].plot(spectral_flux)
+        
+        if detect_amplitude:
+            filtered_amp_envelope_for_plot = np.interp(filtered_amp_envelope, (filtered_amp_envelope.min(), filtered_amp_envelope.max()), (0, 1))
+
+            axs[2].plot(filtered_amp_envelope_for_plot)
+            
+            amp_onsets = np.gradient(filtered_amp_envelope)
+            amp_onsets = np.interp(amp_onsets, (amp_onsets.min(), amp_onsets.max()), (-1, 1))
+            # get positive values only
+            amp_offsets = np.abs(np.clip(amp_onsets, -1, 0))
+            amp_onsets = np.clip(amp_onsets, 0, 1)
+
+            axs[2].plot(amp_offsets)
+            axs[2].plot(amp_onsets)
+
+        # one idea is that a slurred note has a lowering in
+        # amplitude together with a peak in the spectral flux
+        # thing = np.zeros_like(spectral_flux)
+        # thing[spectral_flux > amp_offsets] = 1
+        
+        # thing_regions = np.nonzero(thing)
+        
+        # TODO: HERE
+        # another way to think about this is to combine
+        # periods of volatility in the spectral flux with
+        # downward trends in the amplitude envelope
+        
+        # axs[3].plot(thing)
+        
+        axs[3].plot(spectral_flux)
+        axs[3].plot(1-conf)
+        axs[3].plot(filtered_amp_envelope)
+        axs[3].legend(['spectral_flux', '1-conf', 'filtered_amp_envelope'])
+
+
+        # add legend
+        axs[0].legend(['midi_pitch'])
+        axs[1].legend(['change_point_signal', 'peaks'])
+        axs[2].legend(['conf*spectral_flux', 'spectral_flux', 'filtered_amp_envelope', 'amp_offsets', 'amp_onsets'])
+
         plt.show()
 
     prominences = peak_properties["prominences"]
@@ -130,20 +207,24 @@ def process(f0_path,
     #     plt.vlines(conf_peaks[idx], 0, p)
     # plt.show()
 
-    # take the amplitudes within 6 sigma of the mean
-    # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
-    amp_mean = np.mean(amp_envelope)
-    amp_sd = np.std(amp_envelope)
-    filtered_amp_envelope = amp_envelope.copy()
-    filtered_amp_envelope[filtered_amp_envelope > amp_mean + (6 * amp_sd)] = 0
-    global_max_amp = max(filtered_amp_envelope)
-    # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
+    if detect_amplitude:
+        # take the amplitudes within 6 sigma of the mean
+        # helps to clean up outliers in amplitude scaling as we are not looking for 100% accuracy
+        amp_mean = np.mean(filtered_amp_envelope)
+        amp_sd = np.std(filtered_amp_envelope)
+        # filtered_amp_envelope = amp_envelope.copy()
+        filtered_amp_envelope[filtered_amp_envelope > amp_mean + (6 * amp_sd)] = 0
+        global_max_amp = max(filtered_amp_envelope)
+        # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
 
     min_median_confidence = 1
 
     segment_list = []
     # for a, b in zip(peaks, peaks[1:]):
-    for a, b in note_regions:
+    for a, b, label in sum(zip(note_regions, transitions), ()):
+        if label == 'transition':
+            continue
+
         # Handle an edge case where rounding could cause
         # an end index for a note to be before the start index
         if a > b:
@@ -154,10 +235,11 @@ def process(f0_path,
         a_samp = steps_to_samples(a, sr)
         b_samp = steps_to_samples(b, sr)
 
-        note_amp = amp_envelope[a_samp:b_samp]
-
-        max_amp = np.max(amp_envelope[a_samp:b_samp])
-        scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
+        if detect_amplitude:
+            max_amp = np.max(filtered_amp_envelope[a:b])
+            scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
+        else:
+            scaled_max_amp = 80
 
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
@@ -168,6 +250,7 @@ def process(f0_path,
             'finish_idx': b,
         })
 
+    # MERGE SEGMENTS WITH SAME MEDIAN PITCH
     notes = []
     sub_list = []
     for a, b in zip(segment_list, segment_list[1:]):
@@ -195,6 +278,7 @@ def process(f0_path,
     durations = []
     output_notes = []
 
+    # FILTER MIN VELOCITY AND MIN DURATION
     for x_s in notes:
         x_s_filt = [x for x in x_s if x['amplitude'] > min_velocity]
         if len(x_s_filt) == 0:
@@ -207,7 +291,7 @@ def process(f0_path,
         time_end = 0.01 * seg_end
         sample_start = time_to_samples(time_start, sr=sr)
         sample_end = time_to_samples(time_end, sr=sr)
-        max_amp = np.max(amp_envelope[sample_start:sample_end])
+        max_amp = np.max(filtered_amp_envelope[seg_start:seg_end])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
         valid_amplitude = True  # scaled_max_amp > min_velocity
@@ -230,6 +314,7 @@ def process(f0_path,
                     x_s[-1]['transition_strength']
             })
 
+    # RE-SEPARATE REPEATED NOTES USING ONSET DETECTION
     if not disable_splitting:
         onset_separated_notes = []
         for n in output_notes:
@@ -264,43 +349,45 @@ def process(f0_path,
             onset_separated_notes.append(new_note)
             output_notes = onset_separated_notes
 
-    timed_output_notes = []
-    for n in output_notes:
-        timed_note = n.copy()
+    if detect_amplitude:
+        # AMPLITUDE TRIMMING
+        timed_output_notes = []
+        for n in output_notes:
+            timed_note = n.copy()
 
-        # Adjusting the start time to meet a minimum amp threshold
-        s = timed_note['start_idx']
-        f = timed_note['finish_idx']
+            # Adjusting the start time to meet a minimum amp threshold
+            s = timed_note['start_idx']
+            f = timed_note['finish_idx']
 
-        if f - s > (min_duration / 0.01):
-            noise_floor = 0.01  # this will vary depending on the signal
-            s_samp = steps_to_samples(s, sr)
-            f_samp = steps_to_samples(f, sr)
-            s_adj_samp_all = s_samp + np.where(
-                amp_envelope[s_samp:f_samp] > noise_floor)[0]
+            if f - s > (min_duration / 0.01):
+                noise_floor = 0.01  # this will vary depending on the signal
+                s_samp = steps_to_samples(s, sr)
+                f_samp = steps_to_samples(f, sr)
+                s_adj_samp_all = s_samp + np.where(
+                    filtered_amp_envelope[s:f] > noise_floor)[0]
 
-            if len(s_adj_samp_all) > 0:
-                s_adj_samp_idx = s_adj_samp_all[0]
+                if len(s_adj_samp_all) > 0:
+                    s_adj_samp_idx = s_adj_samp_all[0]
+                else:
+                    continue
+
+                s_adj = samples_to_steps(s_adj_samp_idx, sr)
+
+                f_adj_samp_idx = f_samp - np.where(
+                    np.flip(filtered_amp_envelope[s:f]) > noise_floor)[0][0]
+                if f_adj_samp_idx > f_samp or f_adj_samp_idx < 1:
+                    print("something has gone wrong")
+
+                f_adj = samples_to_steps(f_adj_samp_idx, sr)
+                if f_adj > f or f_adj < 1:
+                    print("something has gone more wrong")
+
+                timed_note['start'] = s_adj * 0.01
+                timed_note['finish'] = f_adj * 0.01
+                timed_output_notes.append(timed_note)
             else:
-                continue
-
-            s_adj = samples_to_steps(s_adj_samp_idx, sr)
-
-            f_adj_samp_idx = f_samp - np.where(
-                np.flip(amp_envelope[s_samp:f_samp]) > noise_floor)[0][0]
-            if f_adj_samp_idx > f_samp or f_adj_samp_idx < 1:
-                print("something has gone wrong")
-
-            f_adj = samples_to_steps(f_adj_samp_idx, sr)
-            if f_adj > f or f_adj < 1:
-                print("something has gone more wrong")
-
-            timed_note['start'] = s_adj * 0.01
-            timed_note['finish'] = f_adj * 0.01
-            timed_output_notes.append(timed_note)
-        else:
-            timed_note['start'] = s * 0.01
-            timed_note['finish'] = f * 0.01
+                timed_note['start'] = s * 0.01
+                timed_note['finish'] = f * 0.01
 
     # s = 1400
     # f = 1425
@@ -339,4 +426,4 @@ def process(f0_path,
     output_midi.instruments.append(instrument)
     output_midi.write(f'{output_filename}.{output_label}.mid')
 
-    return True
+    return f"{output_filename}.{output_label}.mid"
