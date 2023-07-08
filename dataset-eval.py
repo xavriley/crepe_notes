@@ -7,6 +7,7 @@ import pandas as pd
 
 def evaluate(midi_path='*.crepe_notes.mid',
              midi_replace_str='.crepe_notes.mid',
+             midi_replace_with='.mid',
              output_label='crepe_notes'):
     results = []
 
@@ -16,7 +17,7 @@ def evaluate(midi_path='*.crepe_notes.mid',
     for path in paths:
         print(f"{output_label}: {path}")
         est_path = str(path)
-        ref_path = str(path).replace(midi_replace_str, '.gt.mid')
+        ref_path = str(path).replace(midi_replace_str, midi_replace_with)
 
         ref = pm.PrettyMIDI(ref_path)
         est = pm.PrettyMIDI(est_path)
@@ -53,12 +54,14 @@ def evaluate(midi_path='*.crepe_notes.mid',
         est_pitches = est_pitches[est_times_valid_idxs]
 
         eval_result = mir_eval.transcription.evaluate(ref_times, ref_pitches,
-                                                      est_times, est_pitches)
+                                                      est_times, est_pitches,
+                                                      onset_tolerance=0.05)
         eval_result['file'] = str(path)
         results.append(eval_result)
     df = pd.DataFrame(results)
     df.to_pickle(f'{output_label}_eval.pkl')
-    print(df.describe())
+    pd.set_option('display.max_colwidth', None)
+    print(df.describe()[['Precision_no_offset', 'Recall_no_offset', 'F-measure_no_offset', 'Average_Overlap_Ratio_no_offset']])
 
 
 # evaluate('Sax.mt3.mid', '.mt3.mid', 'mt3')
@@ -75,5 +78,8 @@ def evaluate(midi_path='*.crepe_notes.mid',
 #          '.crepe_notes-min-dur-25ms-no-tuning.mid',
 #          'crepe_notes-min-dur-25ms-no-tuning')
 # evaluate('*_vamp_pyin_pyin_notes.mid', '_vamp_pyin_pyin_notes.mid', 'pyin_notes')
-evaluate('*.cn_25ms_min_tiny.mid', '.cn_25ms_min_tiny.mid', 'crepe_notes-min-dur-25ms-tiny')
+# evaluate('*.cn_transition_a.mid', '.cn_transition_a.mid', 'crepe_notes-transitions-a')
 
+evaluate('bass.transcription.mid',  '.transcription.mid', '-fine-aligned.mid', 'filobass_cn_sens_2_min_50ms')
+# evaluate('bass_basic_pitch.mid',  '_basic_pitch.mid', '-fine-aligned.mid', 'filobass_bp')
+# evaluate('bass_basic_pitch.mid',  '_basic_pitch.mid', 'filobass_cn')
