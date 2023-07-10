@@ -14,7 +14,7 @@ CREPE notes
 
 Post-processing for CREPE to turn f0 pitch estimates into discrete notes e.g. MIDI
 
-[<img src="https://github.com/xavriley/crepe_notes/assets/369527/5873cfed-13e4-4837-b10a-c04c5243cb5e" width="50%">](https://www.youtube.com/watch?v=vFvbedBgLKg "CREPE Notes demo")
+[<img src="https://github.com/xavriley/crepe_notes/assets/369527/5873cfed-13e4-4837-b10a-c04c5243cb5e" width="50%">](https://www.youtube.com/watch?v=vFvbedBgLKg)
 
 
 * Free software: mainly MIT licensed, some dependencies have restrictions on commercial use
