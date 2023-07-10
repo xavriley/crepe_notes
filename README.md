@@ -12,12 +12,12 @@ CREPE notes
 <!--         :target: https://crepe-notes.readthedocs.io/en/latest/?version=latest -->
 <!--         :alt: Documentation Status -->
 
-Post-processing for CREPE to turn f0 pitch estimates into discrete notes e.g. MIDI
+Post-processing for CREPE to turn f0 pitch estimates into discrete notes (MIDI)
 
-[<img src="https://github.com/xavriley/crepe_notes/assets/369527/5873cfed-13e4-4837-b10a-c04c5243cb5e" width="50%">](https://www.youtube.com/watch?v=vFvbedBgLKg)
+https://github.com/xavriley/crepe_notes/assets/369527/4cc895f5-9bfe-47af-809d-0152933dc4c9
 
 
-* Free software: mainly MIT licensed, some dependencies have restrictions on commercial use
+* Free software: mainly MIT licensed, some dependencies (madmom) have restrictions on commercial use
 * Documentation: https://crepe-notes.readthedocs.io.
   
 Installation
@@ -57,20 +57,20 @@ In the paper we propose a method of combining two things:
 a) the gradient of the pitch contour from CREPE
 b) the (inverse) confidence of the pitch estimate from CREPE
 
-This gives us a new signal which is a reliable indicator of note onsets, which we can then use to segment the pitch contour into discrete notes. For more details please see the paper.
-
-
+This gives us a new signal which is a reliable indicator of note onsets, which we can then use to segment the pitch contour into discrete notes. For more details please see the paper or the demo video above.
 
 Caveats
 -------
 
-Doesn't handle repeated notes well. This is also more likely to produce spurious extra notes in quiet sections, but these can be filtered by velocity in other midi programs.
+CREPE only works for monophonic audio, which means CREPE Notes only works for monophonic audio too. If you need polyphonic transcription, check out [Basic Pitch](https://basicpitch.spotify.com/).
+
+Due to the way the algorithm works, repeated notes at the same pitch are treated as a special case and have to fall back to using a standard onset detector (madmom). The results might vary depending on the type of music you want to transcribe. For example, in a jazz saxophone solo it's relatively uncommon to repeat the same note. In a rock bass line however the opposite is true.
 
 Roadmap
 -------
 
 -[ ] (Distant goal) Add UI to aid with picking thresholds for velocity and note length
--[ ] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
+-[x] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
 
 Credits
 -------
