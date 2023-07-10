@@ -18,11 +18,6 @@ def samples_to_steps(sample_val, sr, step_size=0.01):
     return int(sample_val / (sr * step_size))
 
 
-def parse_f0(f0_path):
-    data = np.genfromtxt(f0_path, delimiter=',', names=True)
-    return np.nan_to_num(data['frequency']), np.nan_to_num(data['confidence'])
-
-
 def freqs_to_midi(freqs, tuning_offset=0):
     return np.nan_to_num(hz_to_midi(freqs) - tuning_offset, neginf=0)
 
@@ -33,7 +28,13 @@ def calculate_tuning_offset(freqs):
     return tuning_offset
 
 
-def process(f0_path,
+def parse_f0(f0_path):
+    data = np.genfromtxt(f0_path, delimiter=',', names=True)
+    return np.nan_to_num(data['frequency']), np.nan_to_num(data['confidence'])
+
+
+def process(freqs,
+            conf,
             audio_path,
             output_label="transcription",
             sensitivity=0.001,
@@ -45,18 +46,20 @@ def process(f0_path,
             tuning_offset=False,
             detect_amplitude=True):
     
-    cached_amp_envelope_path = f0_path.replace('.f0.csv', '.amp_envelope.npz')
-    if os.path.exists(cached_amp_envelope_path):
+    cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
+    if cached_amp_envelope_path.exists():
         # if we have a cached amplitude envelope, no need to load audio
         filtered_amp_envelope = np.load(cached_amp_envelope_path, allow_pickle=True)['filtered_amp_envelope']
         # sr = get_samplerate(audio_path)
         sr = 44100 # TODO: this is just to make tests work and could lead to confusion
+        y = None
     else:
         try:
-            y, sr = load(audio_path, sr=None)
+            y, sr = load(str(audio_path), sr=None)
         except:
             print("Error loading audio file. Amplitudes will be set to 80")
             detect_amplitude = False
+            y = None
             pass
 
         amp_envelope = np.abs(hilbert(y))
@@ -68,25 +71,30 @@ def process(f0_path,
 
         np.savez(cached_amp_envelope_path, filtered_amp_envelope=filtered_amp_envelope)
     
-    freqs, conf = parse_f0(f0_path)
-
     if use_cwd:
         # write to location that the bin was run from
-        output_filename = Path(f0_path.replace('.f0.csv', '')).name
+        output_filename = audio_path.stem
     else:
-        # write to same folder as the orignal f0.csv
-        output_filename = f0_path.replace('.f0.csv', '')
+        # write to same folder as the orignal audio file
+        output_filename = str(audio_path.parent) + "/" + audio_path.stem
 
-    print(os.path.abspath(f0_path))
+    print(os.path.abspath(audio_path))
 
     if not disable_splitting:
-        onsets_path = f0_path.replace('.f0.csv', '.onsets.npz')
+        onsets_path = str(audio_path.with_suffix('.onsets.npz'))
         if not os.path.exists(onsets_path):
             print(f"Onsets file not found at {onsets_path}")
-            exit()
-        onsets_raw = np.load(onsets_path, allow_pickle=True)['activations']
-        onsets = np.zeros_like(onsets_raw)
-        onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
+            print("Running onset detection...")
+            
+            from madmom.features import CNNOnsetProcessor
+            
+            onset_activations = CNNOnsetProcessor()(audio_path)
+        else:
+            print(f"Loading onsets from {onsets_path}")
+            onset_activations = np.load(onsets_path, allow_pickle=True)['activations']
+
+        onsets = np.zeros_like(onset_activations)
+        onsets[find_peaks(onset_activations, distance=4, height=0.8)[0]] = 1
 
     t = list(range(0, len(conf)))
 

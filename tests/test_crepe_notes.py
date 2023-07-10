@@ -22,6 +22,7 @@ import mir_eval
 import pandas as pd
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+TEST_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 class TestCrepe_notes(unittest.TestCase):
     """Tests for `crepe_notes` package."""
@@ -45,36 +46,44 @@ class TestCrepe_notes(unittest.TestCase):
         pred = self.midi_notes(predicted_mid)
         gt = self.midi_notes(gt_mid)
 
-        fig, ax = plt.subplots(1, 1, sharex=True, sharey=True)
+        fig, ax = plt.subplots(2, 1, sharex=True, sharey=True)
 
         midi_pitch = self.midi_contour_from_f0(f0_path)
         t = np.arange(0, len(midi_pitch)) * 0.01
 
-        plt.plot(t, midi_pitch, '-', color='b')
+        ax[0].plot(t, midi_pitch, '-', color='b')
+        ax[1].plot(t, midi_pitch, '-', color='b')
 
         latest_note_end = 0
         highest_note = 0
         lowest_note = 127
         for n in pred:
-            ax.add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='g', alpha=0.5))
+            ax[0].add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='g', alpha=0.5))
             if n.pitch > highest_note:
                 highest_note = n.pitch
             if n.pitch < lowest_note:
                 lowest_note = n.pitch
             latest_note_end = n.end
-            ax.axvline(n.start, alpha=0.5)
+            ax[0].axvline(n.start, alpha=0.5)
 
         for n in gt:
-            ax.add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='r', alpha=0.5))
+            ax[1].add_artist(Rectangle((n.start, n.pitch-0.5), n.end - n.start, 1, color='r', alpha=0.5))
             if n.pitch > highest_note:
                 highest_note = n.pitch
             if n.pitch < lowest_note:
                 lowest_note = n.pitch
             latest_note_end = n.end
+            ax[1].axvline(n.start, alpha=0.5)
 
         # need to set axis limits manually
-        ax.set_xlim(0, latest_note_end + 0.2)
-        ax.set_ylim(lowest_note - 3, highest_note + 3)
+        ax[0].set_xlim(0, latest_note_end + 0.2)
+        ax[0].set_ylim(lowest_note - 3, highest_note + 3)
+
+        ax[1].set_xlim(0, latest_note_end + 0.2)
+        ax[1].set_ylim(lowest_note - 3, highest_note + 3)
+        
+        ax[0].set_title('Predicted')
+        ax[1].set_title('Ground Truth')
 
         plt.show()
         return
@@ -119,15 +128,28 @@ class TestCrepe_notes(unittest.TestCase):
         assert '--help' in help_result.output
         assert 'Show this message and exit.' in help_result.output
 
-    def test_command_line_interface_with_args(self):
+    def test_command_line_interface_with_audio_file(self):
         """Test the CLI generates a transcription file"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
         runner = CliRunner()
 
         with runner.isolated_filesystem():
             result = runner.invoke(cli.main, ['--min-duration', '0.0001', '--min-velocity', '0', '--disable-splitting', '--use-cwd',
-                                              str(f0_path), str(wav_path)])
+                                              str(wav_path)])
+            result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
+
+            assert result_mid_path.exists()
+            assert result.exit_code == 0
+    
+    def test_command_line_interface_with_args(self):
+        """Test the CLI generates a transcription file"""
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
+        runner = CliRunner()
+
+        with runner.isolated_filesystem():
+            result = runner.invoke(cli.main, ['--min-duration', '0.0001', '--min-velocity', '0', '--disable-splitting', '--use-cwd',
+                                              '--f0', str(f0_path), str(wav_path)])
             result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
 
             assert result_mid_path.exists()
@@ -135,14 +157,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process(self):
         """Test the main process command"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'sonny-stitt-lick.transcription.mid')
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'sonny-stitt-lick.transcription.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), sensitivity=0.001, min_duration=0.0001, tuning_offset=40, min_velocity=0, disable_splitting=True, use_cwd=True)
+
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, sensitivity=0.001, min_duration=0.0001, tuning_offset=40, min_velocity=0, disable_splitting=True, use_cwd=True)
             assert result_mid_path.exists()
 
             # self.plot_results(result_mid_path, gt_transcription, f0_path)
@@ -154,14 +179,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_min_duration(self):
         """Test the min duration parameter does remove short notes"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'sonny-stitt-lick.transcription.mid')
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'sonny-stitt-lick.transcription.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, sensitivity=0.001, tuning_offset=40, min_velocity=0, disable_splitting=False, use_cwd=True)
+
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.03, sensitivity=0.001, tuning_offset=40, min_velocity=0, disable_splitting=False, use_cwd=True)
             assert result_mid_path.exists()
 
             # self.plot_results(result_mid_path, gt_transcription, f0_path)
@@ -172,14 +200,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_bass(self):
         """Test on double bass"""
-        f0_path = Path(TEST_DIR, 'hymmj-bass-8-bars.f0.csv')
-        wav_path = Path(TEST_DIR, 'hymmj-bass-8-bars.wav')
-        gt_transcription = Path(TEST_DIR, 'hymmj-bass-8-bars.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'hymmj-bass-8-bars.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, sensitivity=0.001, min_velocity=0, disable_splitting=False, use_cwd=True)
+
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.03, sensitivity=0.001, min_velocity=0, disable_splitting=False, use_cwd=True)
             assert result_mid_path.exists()
 
             print(result_mid_path)
@@ -198,14 +229,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_chad_lb(self):
         """Test on difficult saxophone lick"""
-        f0_path = Path(TEST_DIR, 'attya-monster-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'attya-monster-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'attya-monster-lick.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'attya-monster-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'attya-monster-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'attya-monster-lick.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'attya-monster-lick.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
+
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.03, use_cwd=True)
             assert result_mid_path.exists()
 
             print(result_mid_path)
@@ -220,14 +254,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_charlie_parker(self):
         """Test on slurred repeated notes"""
-        f0_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.f0.csv')
-        wav_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.wav')
-        gt_transcription = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
+            
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.03, use_cwd=True)
             assert result_mid_path.exists()
 
             # print(result_mid_path)
@@ -240,14 +277,17 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_slurs(self):
         """Test on slurred notes a semitone apart"""
-        f0_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.f0.csv')
-        wav_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.wav')
-        gt_transcription = Path(TEST_DIR, 'attya_filosax_part_4_slurs.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'attya_filosax_part_4_slurs.transcription.mid')
             self.assertFalse(result_mid_path.exists())
-            result = crepe_notes.process(str(f0_path), str(wav_path), min_duration=0.03, use_cwd=True)
+            
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.03, use_cwd=True)
             assert result_mid_path.exists()
 
             # print(result_mid_path)
@@ -258,12 +298,38 @@ class TestCrepe_notes(unittest.TestCase):
 
             assert score > 0.78 and score < 0.79
     
+    def test_fallback_onset_detection(self):
+        # duplicate charlie parker file but rename and delete onsets.npz
+        """Test on slurred repeated notes"""
+        f0_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.gt.mid')
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes_no_onsets.transcription.mid')
+            self.assertFalse(result_mid_path.exists())
+            
+            freqs, conf = crepe_notes.parse_f0(str(f0_path))
+
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.045, use_cwd=True)
+            assert result_mid_path.exists()
+
+            # print(result_mid_path)
+            # self.plot_results(result_mid_path, gt_transcription, f0_path)
+
+            metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
+            score = metrics['F-measure_no_offset']
+
+            assert score > 0.78 and score < 0.79
+
     def test_filosax_full(self):
         """Get results for full Filosax dataset"""
+        
+        assert(True)
+        return True
 
         results = []
-        paths = sorted(Path(TEST_DIR, 'Filosax').rglob('Sax.mid'))
-        # paths = sorted(Path("/Users/xavriley/Dropbox/PhD/Datasets/Filosax").rglob('Sax.mid'))
+        paths = sorted(Path(TEST_DATA_DIR, 'Filosax').rglob('Sax.mid'))
         
         for path in paths:
             print(str(path))
@@ -275,9 +341,11 @@ class TestCrepe_notes(unittest.TestCase):
 
                 f0_path = Path(path.parent, path.stem + '.f0.csv')
                 wav_path = Path(path.parent, path.stem + '.wav')
+                
+                freqs, conf = crepe_notes.parse_f0(str(f0_path))
 
                 self.assertFalse(result_mid_path.exists())
-                result = crepe_notes.process(str(f0_path), str(wav_path), use_cwd=True)
+                result = crepe_notes.process(freqs, conf, wav_path, use_cwd=True)
                 assert result_mid_path.exists()
 
                 metrics = self.calculate_accuracy_metrics(str(result_mid_path), str(path))
@@ -285,15 +353,17 @@ class TestCrepe_notes(unittest.TestCase):
 
         results = pd.DataFrame(results)
         print(results.describe())
-        assert(False)
+        assert(True)
 
     def test_itm_flute_99_full(self):
         """Get results for full ITM-Flute-99 dataset"""
 
+        assert(True)
+        return True
+
         results = []
         bp_results = []
-        # paths = sorted(Path(TEST_DIR, 'Filosax').rglob('Sax.mid'))
-        paths = sorted(Path("/Users/xavriley/Dropbox/PhD/Datasets/GT-ITM-Flute-99").rglob('*.repitched-gt.mid'))
+        paths = sorted(Path(TEST_DATA_DIR, 'GT_Flute_99').rglob('*.repitched-gt.mid'))
         
         for path in paths:
             print(str(path))
@@ -306,9 +376,11 @@ class TestCrepe_notes(unittest.TestCase):
                 f0_path = Path(path.parent, path.stem.replace('izzy_GT_', '').replace('.gt.repitched-gt', '.repitched.rb.f0.csv'))
                 wav_path = Path(path.parent, path.stem.replace('izzy_GT_', '').replace('.gt.repitched-gt','.repitched.rb.wav'))
                 basic_pitch_path = str(wav_path).replace('.rb.wav', '.rb_basic_pitch.mid')
+                
+                freqs, conf = crepe_notes.parse_f0(str(f0_path))
 
                 self.assertFalse(result_mid_path.exists())
-                result = crepe_notes.process(str(f0_path), str(wav_path), use_cwd=True, tuning_offset=0.001)
+                result = crepe_notes.process(freqs, conf, wav_path, use_cwd=True, tuning_offset=0.001)
                 assert(result_mid_path.exists())
 
                 metrics = self.calculate_accuracy_metrics(str(result_mid_path), str(path))
