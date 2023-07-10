@@ -86,19 +86,15 @@ def process(freqs,
             print(f"Onsets file not found at {onsets_path}")
             print("Running onset detection...")
             
-            if y is None:
-                y, sr = load(str(audio_path), sr=None)
+            from madmom.features import CNNOnsetProcessor
             
-            onsets = onset.onset_detect(y, sr=sr, backtrack=False, hop_length=sr//100,
-                                        delta=0.075, wait=min_duration + 0.01)
-            onsets_raw = np.zeros_like(freqs)
-            onsets_raw[onsets] = 1
-            onsets = onsets_raw
+            onset_activations = CNNOnsetProcessor()(audio_path)
         else:
             print(f"Loading onsets from {onsets_path}")
-            onsets_raw = np.load(onsets_path, allow_pickle=True)['activations']
-            onsets = np.zeros_like(onsets_raw)
-            onsets[find_peaks(onsets_raw, distance=4, height=0.8)[0]] = 1
+            onset_activations = np.load(onsets_path, allow_pickle=True)['activations']
+
+        onsets = np.zeros_like(onset_activations)
+        onsets[find_peaks(onset_activations, distance=4, height=0.8)[0]] = 1
 
     t = list(range(0, len(conf)))
 
