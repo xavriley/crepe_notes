@@ -105,7 +105,7 @@ ENV/
 .vscode/
 .idea/
 tags
-tests/Filosax/
-tests/GT_Flute_99/
+tests/data/Filosax/
+tests/data/GT_Flute_99/
 crepe_notes.zip
 .DS_Store

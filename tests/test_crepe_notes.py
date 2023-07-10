@@ -22,6 +22,7 @@ import mir_eval
 import pandas as pd
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+TEST_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 class TestCrepe_notes(unittest.TestCase):
     """Tests for `crepe_notes` package."""
@@ -129,7 +130,7 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_command_line_interface_with_audio_file(self):
         """Test the CLI generates a transcription file"""
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
         runner = CliRunner()
 
         with runner.isolated_filesystem():
@@ -142,8 +143,8 @@ class TestCrepe_notes(unittest.TestCase):
     
     def test_command_line_interface_with_args(self):
         """Test the CLI generates a transcription file"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
         runner = CliRunner()
 
         with runner.isolated_filesystem():
@@ -156,9 +157,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process(self):
         """Test the main process command"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'sonny-stitt-lick.transcription.mid')
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'sonny-stitt-lick.transcription.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
@@ -178,9 +179,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_min_duration(self):
         """Test the min duration parameter does remove short notes"""
-        f0_path = Path(TEST_DIR, 'sonny-stitt-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'sonny-stitt-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'sonny-stitt-lick.transcription.mid')
+        f0_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'sonny-stitt-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'sonny-stitt-lick.transcription.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
@@ -199,9 +200,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_bass(self):
         """Test on double bass"""
-        f0_path = Path(TEST_DIR, 'hymmj-bass-8-bars.f0.csv')
-        wav_path = Path(TEST_DIR, 'hymmj-bass-8-bars.wav')
-        gt_transcription = Path(TEST_DIR, 'hymmj-bass-8-bars.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'hymmj-bass-8-bars.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'hymmj-bass-8-bars.transcription.mid')
@@ -228,9 +229,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_chad_lb(self):
         """Test on difficult saxophone lick"""
-        f0_path = Path(TEST_DIR, 'attya-monster-lick.f0.csv')
-        wav_path = Path(TEST_DIR, 'attya-monster-lick.wav')
-        gt_transcription = Path(TEST_DIR, 'attya-monster-lick.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'attya-monster-lick.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'attya-monster-lick.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'attya-monster-lick.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'attya-monster-lick.transcription.mid')
@@ -253,9 +254,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_charlie_parker(self):
         """Test on slurred repeated notes"""
-        f0_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.f0.csv')
-        wav_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.wav')
-        gt_transcription = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes.transcription.mid')
@@ -276,9 +277,9 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_process_slurs(self):
         """Test on slurred notes a semitone apart"""
-        f0_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.f0.csv')
-        wav_path = Path(TEST_DIR, 'attya_filosax_part_4_slurs.wav')
-        gt_transcription = Path(TEST_DIR, 'attya_filosax_part_4_slurs.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'attya_filosax_part_4_slurs.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'attya_filosax_part_4_slurs.transcription.mid')
@@ -300,9 +301,9 @@ class TestCrepe_notes(unittest.TestCase):
     def test_fallback_onset_detection(self):
         # duplicate charlie parker file but rename and delete onsets.npz
         """Test on slurred repeated notes"""
-        f0_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.f0.csv')
-        wav_path = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.wav')
-        gt_transcription = Path(TEST_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.gt.mid')
+        f0_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.f0.csv')
+        wav_path = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.wav')
+        gt_transcription = Path(TEST_DATA_DIR, 'cp_suede_shoes_repeated_notes_no_onsets.gt.mid')
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes_no_onsets.transcription.mid')
@@ -319,14 +320,13 @@ class TestCrepe_notes(unittest.TestCase):
             metrics = self.calculate_accuracy_metrics(result_mid_path, gt_transcription)
             score = metrics['F-measure_no_offset']
 
-            assert score > 0.66 and score < 0.67
+            assert score > 0.78 and score < 0.79
 
     def test_filosax_full(self):
         """Get results for full Filosax dataset"""
 
         results = []
-        paths = sorted(Path(TEST_DIR, 'Filosax').rglob('Sax.mid'))
-        # paths = sorted(Path("/Users/xavriley/Dropbox/PhD/Datasets/Filosax").rglob('Sax.mid'))
+        paths = sorted(Path(TEST_DATA_DIR, 'Filosax').rglob('Sax.mid'))
         
         for path in paths:
             print(str(path))
@@ -357,8 +357,7 @@ class TestCrepe_notes(unittest.TestCase):
 
         results = []
         bp_results = []
-        # paths = sorted(Path(TEST_DIR, 'Filosax').rglob('Sax.mid'))
-        paths = sorted(Path("/Users/xavriley/Dropbox/PhD/Datasets/GT-ITM-Flute-99").rglob('*.repitched-gt.mid'))
+        paths = sorted(Path(TEST_DATA_DIR, 'GT_Flute_99').rglob('*.repitched-gt.mid'))
         
         for path in paths:
             print(str(path))
