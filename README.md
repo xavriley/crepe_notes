@@ -36,6 +36,7 @@ crepe_notes [path_to_original_audio]
 
 A '.mid' file will be created in the location of the audio file with the name `[audio_file_stem].transcription.mid`.
 
+For additional options check out `crepe_notes --help`.
 
 Features
 --------
