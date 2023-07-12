@@ -66,7 +66,7 @@ Results
 How good is it? For the datasets we've tested so far it looks promising.
 
 * FiloSax (24 hrs solo saxophone audio) - 90% F-measure (no offsets)
-* ITM GT Flute 99 - (20mins Irish trad flute) - 84% F-measure (no offsets) +2% over Basic Pitch
+* ITM GT Flute 99 - (20mins Irish trad flute) - 74% F-measure (no offsets) +7% over Basic Pitch
 * FiloBass (4 hrs double bass source separated stems) - 72% F-measure (no offsets) +10% over Basic Pitch
 
 Please open a Github issue if you get results for any other public datasets - we'll try to include them in this repo.
