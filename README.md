@@ -16,16 +16,26 @@ Post-processing for CREPE to turn f0 pitch estimates into discrete notes (MIDI)
 
 https://github.com/xavriley/crepe_notes/assets/369527/4cc895f5-9bfe-47af-809d-0152933dc4c9
 
-
-* Free software: mainly MIT licensed, some dependencies (madmom) have restrictions on commercial use
-* Documentation: https://crepe-notes.readthedocs.io.
+[Demo video for pypi users also available here](https://www.youtube.com/watch?v=vFvbedBgLKg)
   
+Features
+--------
+
+* outputs midi notes for monophonic audio
+* include MIDI velocity information
+* includes options to filter notes that are too quiet or too short
+
 Installation
 ------------
 
 ```
-pip install crepe_notes
+pip install crepe-notes
 ```
+
+> **Warning**
+> Python 3.10 and above will fail to run, due to [this long running issue](https://github.com/CPJKU/madmom/issues/509) with madmom.
+>
+> As a workaround, please run `!pip install -e git+https://github.com/CPJKU/madmom#egg=madmom` after installation
 
 Basic Usage
 -----------
@@ -38,13 +48,26 @@ A '.mid' file will be created in the location of the audio file with the name `[
 
 For additional options check out `crepe_notes --help`.
 
-Features
---------
+## Min duration, min velocity and sensitivity
 
-* outputs midi notes for monophonic audio
-* include MIDI velocity information
-* includes options to filter notes that are too quiet or too short
+These are the three params you may need to tweak to get optimal results.
 
+* `--min-duration` is specified in seconds (e.g. `0.03` is `30ms`). For fast, virtuosic music this is a reasonable default but for things like vocals and double bass lines a longer min duration (`50ms` or higher) may reduce the number of errors in your transcription.
+
+* `--min-velocity` is expressed as in MIDI e.g. `0 - 127`. The default is `6` which removes any notes with velocities at or below that value, but you may find recordings with a higher noise floor benefit from a higher threshold.
+
+* `--sensitivity` relates to the peak picking threshold used on the combined signal (see paper for details) and defaults to `0.001`. If the source material has an unstable pitch profile which results in a lot of short notes either side of a longer target note, increasing the sensitivity to `0.002` may help. 
+
+
+## Caching data files
+
+If you are running `crepe_notes` over an entire dataset, we recommend using the `--save-analysis-files` flag. This will write the following results:
+
+* crepe to `[audio_file_stem].f0.csv`.
+* madmom onset activations to `[audio_file_stem].onsets.npz`
+* amplitude envelope calculations to `[audio_file_stem].amp_envelope.npz`
+
+This will speed up run times at the expense of some disk space.
 
 About
 -----
