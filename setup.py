@@ -35,7 +35,7 @@ setup(
         ],
     },
     install_requires=requirements,
-    license="MIT license",
+    license="GNU General Public License v3.0 license",
     long_description=readme + '\n\n' + history,
     include_package_data=True,
     keywords='crepe_notes',

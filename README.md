@@ -60,6 +60,17 @@ b) the (inverse) confidence of the pitch estimate from CREPE
 
 This gives us a new signal which is a reliable indicator of note onsets, which we can then use to segment the pitch contour into discrete notes. For more details please see the paper or the demo video above.
 
+Results
+-------
+
+How good is it? For the datasets we've tested so far it looks promising.
+
+* FiloSax (24 hrs solo saxophone audio) - 90% F-measure (no offsets)
+* ITM GT Flute 99 - (20mins Irish trad flute) - 84% F-measure (no offsets) +2% over Basic Pitch
+* FiloBass (4 hrs double bass source separated stems) - 72% F-measure (no offsets) +10% over Basic Pitch
+
+Please open a Github issue if you get results for any other public datasets - we'll try to include them in this repo.
+
 Caveats
 -------
 
@@ -67,11 +78,13 @@ CREPE only works for monophonic audio, which means CREPE Notes only works for mo
 
 Due to the way the algorithm works, repeated notes at the same pitch are treated as a special case and have to fall back to using a standard onset detector (madmom). The results might vary depending on the type of music you want to transcribe. For example, in a jazz saxophone solo it's relatively uncommon to repeat the same note. In a rock bass line however the opposite is true.
 
+The onset detection library we use ([madmom](https://github.com/CPJKU/madmom)) has a licence which restricts commercial use. This restrictions is conferred onto CREPE Notes as a result - if you have a commercial use case please contact the madmom authors to discuss this.
+
 Roadmap
 -------
 
--[ ] (Distant goal) Add UI to aid with picking thresholds for velocity and note length
--[x] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
+- [ ] (Distant goal) Add UI to aid with picking thresholds for velocity and note length
+- [x] Experiment with edge preserving smoothing on the confidence thresholds to reduce spurious grace notes/glissandi
 
 Credits
 -------
