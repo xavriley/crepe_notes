@@ -19,8 +19,11 @@ from .crepe_notes import process, parse_f0, run_crepe
 @click.argument('audio_path', type=click.Path(exists=True, path_type=pathlib.Path))
 @click.help_option()
 def main(f0, audio_path, output_label, sensitivity, min_duration, min_velocity, disable_splitting, tuning_offset, use_smoothing, use_cwd, save_analysis_files):
-    if f0 is None:
+    default_f0_path = audio_path.with_suffix('.f0.csv')
+    if not default_f0_path.exists() and f0 is None:
         frequency, confidence = run_crepe(audio_path)
+    elif f0 is None:
+        frequency, confidence = parse_f0(default_f0_path)
     else:
         frequency, confidence = parse_f0(f0)
 
