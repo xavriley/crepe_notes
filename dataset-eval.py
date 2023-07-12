@@ -80,6 +80,7 @@ def evaluate(midi_path='*.crepe_notes.mid',
 # evaluate('*_vamp_pyin_pyin_notes.mid', '_vamp_pyin_pyin_notes.mid', 'pyin_notes')
 # evaluate('*.cn_transition_a.mid', '.cn_transition_a.mid', 'crepe_notes-transitions-a')
 
-evaluate('bass.transcription.mid',  '.transcription.mid', '-fine-aligned.mid', 'filobass_cn_sens_2_min_50ms')
+# evaluate('bass.transcription.mid',  '.transcription.mid', '-fine-aligned.mid', 'filobass_cn_sens_2_min_50ms')
+evaluate('md-bass.mid',  'md-bass.mid', 'bass-fine-aligned.mid', 'melodyne_melodic')
 # evaluate('bass_basic_pitch.mid',  '_basic_pitch.mid', '-fine-aligned.mid', 'filobass_bp')
 # evaluate('bass_basic_pitch.mid',  '_basic_pitch.mid', 'filobass_cn')

@@ -109,3 +109,5 @@ tests/data/Filosax/
 tests/data/GT_Flute_99/
 crepe_notes.zip
 .DS_Store
+*/.DS_Store
+

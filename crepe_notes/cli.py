@@ -3,7 +3,7 @@ import sys
 import pathlib
 import click
 import numpy as np
-from .crepe_notes import process, parse_f0
+from .crepe_notes import process, parse_f0, run_crepe
 
 @click.command()
 @click.option('--output-label', default='transcription')
@@ -15,15 +15,12 @@ from .crepe_notes import process, parse_f0
 @click.option('--use-smoothing', is_flag=True, default=False, help='Enable smoothing of confidence')
 @click.option('--use-cwd', is_flag=True, default=False, help='If True, write to the cwd of the current command, else write to the parent folder of the f0_path')
 @click.option('--f0', type=click.Path(exists=True))
+@click.option('--save-analysis-files', is_flag=True, default=False, help='Save f0, madmom onsets and amp envelope as files')
 @click.argument('audio_path', type=click.Path(exists=True, path_type=pathlib.Path))
 @click.help_option()
-def main(f0, audio_path, output_label, sensitivity, min_duration, min_velocity, disable_splitting, tuning_offset, use_smoothing, use_cwd):
+def main(f0, audio_path, output_label, sensitivity, min_duration, min_velocity, disable_splitting, tuning_offset, use_smoothing, use_cwd, save_analysis_files):
     if f0 is None:
-        import crepe
-        from scipy.io import wavfile
-
-        sr, audio = wavfile.read(str(audio_path))
-        time, frequency, confidence, activation = crepe.predict(audio, sr, viterbi=True)
+        frequency, confidence = run_crepe(audio_path)
     else:
         frequency, confidence = parse_f0(f0)
 
@@ -32,7 +29,7 @@ def main(f0, audio_path, output_label, sensitivity, min_duration, min_velocity, 
     click.echo(click.format_filename(audio_path))
     process(frequency, confidence, audio_path, output_label=output_label, sensitivity=sensitivity, use_smoothing=use_smoothing,
             min_duration=min_duration, min_velocity=min_velocity, disable_splitting=disable_splitting, use_cwd=use_cwd,
-            tuning_offset=tuning_offset)
+            tuning_offset=tuning_offset, save_analysis_files=save_analysis_files)
 
 
 if __name__ == "__main__":

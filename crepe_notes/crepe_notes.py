@@ -4,10 +4,17 @@ from scipy.signal import find_peaks, hilbert, peak_widths, butter, filtfilt, res
 import numpy as np
 import pretty_midi as pm
 import matplotlib.pyplot as plt
-from .one_euro_filter import OneEuroFilter
+import crepe
+from scipy.io import wavfile
 
 import os.path
 from pathlib import Path
+
+def run_crepe(audio_path):
+    sr, audio = wavfile.read(str(audio_path))
+    time, frequency, confidence, activation = crepe.predict(audio, sr, viterbi=True)
+    
+    return frequency, confidence
 
 
 def steps_to_samples(step_val, sr, step_size=0.01):
@@ -31,27 +38,17 @@ def calculate_tuning_offset(freqs):
 def parse_f0(f0_path):
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     return np.nan_to_num(data['frequency']), np.nan_to_num(data['confidence'])
-
-
-def process(freqs,
-            conf,
-            audio_path,
-            output_label="transcription",
-            sensitivity=0.001,
-            use_smoothing=False,
-            min_duration=0.03,
-            min_velocity=6,
-            disable_splitting=False,
-            use_cwd=True,
-            tuning_offset=False,
-            detect_amplitude=True):
     
-    cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
+def save_f0(f0_path, frequency, confidence):
+    np.savetxt(f0_path, np.stack([np.linspace(0, 0.01 * len(frequency), len(frequency)).astype('float'), frequency.astype('float'), confidence.astype('float')], axis=1), fmt='%10.7f', delimiter=',', header='time,frequency,confidence', comments='')
+    return
+
+def load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, save_amp_envelope):
     if cached_amp_envelope_path.exists():
         # if we have a cached amplitude envelope, no need to load audio
         filtered_amp_envelope = np.load(cached_amp_envelope_path, allow_pickle=True)['filtered_amp_envelope']
         # sr = get_samplerate(audio_path)
-        sr = 44100 # TODO: this is just to make tests work and could lead to confusion
+        sr = default_sample_rate # this is mainly to make tests work without having to load audio
         y = None
     else:
         try:
@@ -68,9 +65,32 @@ def process(freqs,
         # low pass filter the amplitude envelope
         b, a = butter(4, 50, 'low', fs=sr)
         filtered_amp_envelope = filtfilt(b, a, scaled_amp_envelope)[::(sr//100)]
-
+    
+    if save_amp_envelope:
         np.savez(cached_amp_envelope_path, filtered_amp_envelope=filtered_amp_envelope)
     
+    return sr, y, filtered_amp_envelope, detect_amplitude    
+
+
+def process(freqs,
+            conf,
+            audio_path,
+            output_label="transcription",
+            sensitivity=0.001,
+            use_smoothing=False,
+            min_duration=0.03,
+            min_velocity=6,
+            disable_splitting=False,
+            use_cwd=True,
+            tuning_offset=False,
+            detect_amplitude=True,
+            save_amp_envelope=False,
+            default_sample_rate=44100,
+            save_analysis_files=False,):
+    
+    cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
+    sr, y, filtered_amp_envelope, detect_amplitude = load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, save_amp_envelope)
+
     if use_cwd:
         # write to location that the bin was run from
         output_filename = audio_path.stem
@@ -79,6 +99,12 @@ def process(freqs,
         output_filename = str(audio_path.parent) + "/" + audio_path.stem
 
     print(os.path.abspath(audio_path))
+    
+    if save_analysis_files:
+        f0_path = audio_path.with_suffix(".f0.csv")
+        if not f0_path.exists():
+            print(f"Saving f0 to {f0_path}")
+            save_f0(f0_path, freqs, conf)  
 
     if not disable_splitting:
         onsets_path = str(audio_path.with_suffix('.onsets.npz'))
@@ -89,6 +115,8 @@ def process(freqs,
             from madmom.features import CNNOnsetProcessor
             
             onset_activations = CNNOnsetProcessor()(audio_path)
+            if save_analysis_files:
+                np.savez(onsets_path, activations=onset_activations)
         else:
             print(f"Loading onsets from {onsets_path}")
             onset_activations = np.load(onsets_path, allow_pickle=True)['activations']
@@ -96,37 +124,24 @@ def process(freqs,
         onsets = np.zeros_like(onset_activations)
         onsets[find_peaks(onset_activations, distance=4, height=0.8)[0]] = 1
 
-    t = list(range(0, len(conf)))
-
-    if use_smoothing:
-        # The filtered signal
-        min_cutoff = 0.002
-        beta = 0.7
-        smooth_conf = np.zeros_like(conf)
-        smooth_conf[0] = conf[0]
-        one_euro_filter = OneEuroFilter(t[0],
-                                        conf[0],
-                                        min_cutoff=min_cutoff,
-                                        beta=beta)
-        for i in range(1, len(t)):
-            smooth_conf[i] = one_euro_filter(t[i], conf[i])
-
     if tuning_offset == False:
         tuning_offset = calculate_tuning_offset(freqs)
     else:
         tuning_offset = tuning_offset / 100
 
+    # get pitch gradient
     midi_pitch = freqs_to_midi(freqs, tuning_offset)
     pitch_changes = np.abs(np.gradient(midi_pitch))
     pitch_changes = np.interp(pitch_changes,
                               (pitch_changes.min(), pitch_changes.max()),
                               (0, 1))
 
+    # get confidence peaks with peak widths (prominences)
     conf_peaks, conf_peak_properties = find_peaks(1 - conf,
                                                   distance=4,
                                                   prominence=sensitivity)
-    conf_prominences = conf_peak_properties["prominences"]
 
+    # combine pitch changes and confidence peaks to get change point signal
     change_point_signal = (1 - conf) * pitch_changes
     change_point_signal = np.interp(
         change_point_signal,
@@ -138,82 +153,11 @@ def process(freqs,
     transition_starts = list(map(int, np.round(transition_starts)))
     transition_ends = list(map(int, np.round(transition_ends)))
 
+    # get candidate note regions - any point between two peaks in the change point signal
     transitions = [(s, f, 'transition') for (s, f) in zip(transition_starts, transition_ends)]
     note_starts = [0] + transition_ends
     note_ends = transition_starts + [len(change_point_signal) + 1]
     note_regions = [(s, f, 'note') for (s, f) in (zip(note_starts, note_ends))]
-
-    show_plots = False
-    if show_plots:
-        fig, axs = plt.subplots(4, 1, sharex=True)
-        axs[0].plot(midi_pitch)
-        # [axs[0].fill_between(x, 56, 75, alpha=0.5) for x in note_regions]
-        axs[1].plot(change_point_signal)
-        axs[1].plot(peaks, change_point_signal[peaks], 'x')
-        
-        
-        spectral_flux = onset.onset_strength(y=y,
-            sr=sr, 
-            hop_length=(sr // 100),
-            center=False,
-            )
-        spectral_flux = np.interp(spectral_flux, (spectral_flux.min(), spectral_flux.max()), (0, 1))
-        inv_conf = np.square(1 - conf)
-
-        axs[2].plot(inv_conf * spectral_flux)
-        axs[2].plot(spectral_flux)
-        
-        if detect_amplitude:
-            filtered_amp_envelope_for_plot = np.interp(filtered_amp_envelope, (filtered_amp_envelope.min(), filtered_amp_envelope.max()), (0, 1))
-
-            axs[2].plot(filtered_amp_envelope_for_plot)
-            
-            amp_onsets = np.gradient(filtered_amp_envelope)
-            amp_onsets = np.interp(amp_onsets, (amp_onsets.min(), amp_onsets.max()), (-1, 1))
-            # get positive values only
-            amp_offsets = np.abs(np.clip(amp_onsets, -1, 0))
-            amp_onsets = np.clip(amp_onsets, 0, 1)
-
-            axs[2].plot(amp_offsets)
-            axs[2].plot(amp_onsets)
-
-        # one idea is that a slurred note has a lowering in
-        # amplitude together with a peak in the spectral flux
-        # thing = np.zeros_like(spectral_flux)
-        # thing[spectral_flux > amp_offsets] = 1
-        
-        # thing_regions = np.nonzero(thing)
-        
-        # TODO: HERE
-        # another way to think about this is to combine
-        # periods of volatility in the spectral flux with
-        # downward trends in the amplitude envelope
-        
-        # axs[3].plot(thing)
-        
-        axs[3].plot(spectral_flux)
-        axs[3].plot(1-conf)
-        axs[3].plot(filtered_amp_envelope)
-        axs[3].legend(['spectral_flux', '1-conf', 'filtered_amp_envelope'])
-
-
-        # add legend
-        axs[0].legend(['midi_pitch'])
-        axs[1].legend(['change_point_signal', 'peaks'])
-        axs[2].legend(['conf*spectral_flux', 'spectral_flux', 'filtered_amp_envelope', 'amp_offsets', 'amp_onsets'])
-
-        plt.show()
-
-    prominences = peak_properties["prominences"]
-
-    # scaled_midi_pitch = np.interp(midi_pitch, (0, 127), (0, 1))
-    # plt.plot(change_point_signal[0:10000], label='change_points')
-    # plt.plot(smooth_conf[0:10000], label='conf')
-    # plt.plot(scaled_midi_pitch[0:10000], ',', label='pitch_changes')
-    # plt.plot(peaks[peaks < 10000], change_point_signal[peaks[peaks < 10000]], '.')
-    # for idx, p in enumerate(conf_prominences[0:500]):
-    #     plt.vlines(conf_peaks[idx], 0, p)
-    # plt.show()
 
     if detect_amplitude:
         # take the amplitudes within 6 sigma of the mean
@@ -223,12 +167,8 @@ def process(freqs,
         # filtered_amp_envelope = amp_envelope.copy()
         filtered_amp_envelope[filtered_amp_envelope > amp_mean + (6 * amp_sd)] = 0
         global_max_amp = max(filtered_amp_envelope)
-        # print(f"max_amp: {max(amp_envelope)} filtered_max_amp: {global_max_amp}")
-
-    min_median_confidence = 1
 
     segment_list = []
-    # for a, b in zip(peaks, peaks[1:]):
     for a, b, label in sum(zip(note_regions, transitions), ()):
         if label == 'transition':
             continue
@@ -240,9 +180,6 @@ def process(freqs,
         elif b - a <= 1:
             continue
 
-        a_samp = steps_to_samples(a, sr)
-        b_samp = steps_to_samples(b, sr)
-
         if detect_amplitude:
             max_amp = np.max(filtered_amp_envelope[a:b])
             scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
@@ -252,17 +189,18 @@ def process(freqs,
         segment_list.append({
             'pitch': np.round(np.median(midi_pitch[a:b])),
             'conf': np.median(conf[a:b]),
-            'transition_strength': 1 - conf[a], # this no longer makes sense
+            'transition_strength': 1 - conf[a], # TODO: make use of the dip in confidence as a measure of how strong an onset is
             'amplitude': scaled_max_amp,
             'start_idx': a,
             'finish_idx': b,
         })
 
-    # MERGE SEGMENTS WITH SAME MEDIAN PITCH
+    # segment list contains our candidate notes
+    # now we iterate through them and merge if two adjacent segments have the same median pitch
     notes = []
     sub_list = []
     for a, b in zip(segment_list, segment_list[1:]):
-        # TODO: compute variance in segment to catch glissandi
+        # TODO: make use of variance in segment to catch glissandi?
         # if np.var(midi_pitch[a[1][0]:a[1][1]]) > 1:
         #     continue
 
@@ -286,7 +224,7 @@ def process(freqs,
     durations = []
     output_notes = []
 
-    # FILTER MIN VELOCITY AND MIN DURATION
+    # Filter out notes that are too short or too quiet
     for x_s in notes:
         x_s_filt = [x for x in x_s if x['amplitude'] > min_velocity]
         if len(x_s_filt) == 0:
@@ -302,9 +240,11 @@ def process(freqs,
         max_amp = np.max(filtered_amp_envelope[seg_start:seg_end])
         scaled_max_amp = np.interp(max_amp, (0, global_max_amp), (0, 127))
 
-        valid_amplitude = True  # scaled_max_amp > min_velocity
+        valid_amplitude = scaled_max_amp > min_velocity
+        valid_duration = (time_end - time_start) > min_duration
+        
+        # TODO: make use of confidence strength
         valid_confidence = True  # median_confidence > 0.1
-        valid_duration = True  # (time_end - time_start) > min_duration
 
         if valid_amplitude and valid_confidence and valid_duration:
             output_notes.append({
@@ -322,19 +262,16 @@ def process(freqs,
                     x_s[-1]['transition_strength']
             })
 
-    # RE-SEPARATE REPEATED NOTES USING ONSET DETECTION
+    # Handle repeated notes
+    # Here we use a standard onset detection algorithm from madmom
+    # with a high threshold (0.8) to re-split notes that are repeated
+    # Repeated notes have a pitch gradient of 0 and are therefore
+    # not separated by the algorithm above
     if not disable_splitting:
         onset_separated_notes = []
         for n in output_notes:
             n_s = n['start_idx']
             n_f = n['finish_idx']
-
-            # if seg_s > 2000 and seg_f < 2700:
-            #     plt.plot(midi_pitch[n[0]['start_idx']:n[-1]['finish_idx']])
-            #     plt.vlines(seg_s - n[0]['start_idx'], 50, 70, 'r')
-            #     plt.vlines(seg_f - seg_s, 50, 70, 'r')
-            #     plt.plot(onsets[seg_s:seg_f] * 5 + 50)
-            #     plt.show()
 
             last_onset = 0
             if np.any(onsets[n_s:n_f] > 0.7):
@@ -358,7 +295,7 @@ def process(freqs,
             output_notes = onset_separated_notes
 
     if detect_amplitude:
-        # AMPLITUDE TRIMMING
+        # Trim notes that fall below a certain amplitude threshold
         timed_output_notes = []
         for n in output_notes:
             timed_note = n.copy()
@@ -368,6 +305,7 @@ def process(freqs,
             f = timed_note['finish_idx']
 
             if f - s > (min_duration / 0.01):
+                # TODO: make noise floor configurable
                 noise_floor = 0.01  # this will vary depending on the signal
                 s_samp = steps_to_samples(s, sr)
                 f_samp = steps_to_samples(f, sr)
@@ -397,31 +335,8 @@ def process(freqs,
                 timed_note['start'] = s * 0.01
                 timed_note['finish'] = f * 0.01
 
-    # s = 1400
-    # f = 1425
-    # plt.plot(amp_envelope[steps_to_samples(s, sr):steps_to_samples(f, sr)])
-    # plt.hlines(1, timed_output_notes[0]['start_idx'] - s, f, alpha=0.5)
-    # plt.plot()
-
-    # import plotext as plttxt
-    # print(f"max pitch: {np.unique([n['pitch'] for n in output_notes])}")
-    # scaled_velocities = [n['velocity'] for n in output_notes]
-    # print(max(scaled_velocities))
-    # plttxt.hist(scaled_velocities, 20, label='Velocities')
-    # plttxt.title("Velocity distribution")
-    # plttxt.show()
-
-    # confs = [n['transition_strength'] for n in segment_list]
-    # plt.hist(confs, bins=[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], label='Transition strengths')
-    # plt.title("Transitions")
-    # plt.show()
-    #
-    # durations = [n['finish'] - n['start'] for n in output_notes]
-    # plt.hist(durations, 30, label='Durations')
-    # plt.title('Durations')
-    # plt.show()
-
     for n in timed_output_notes:
+        # remove invalid notes
         if n['start'] >= n['finish']:
             continue
 
