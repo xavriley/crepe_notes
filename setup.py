@@ -9,7 +9,7 @@ with open('README.md') as readme_file:
 with open('HISTORY.md') as history_file:
     history = history_file.read()
 
-requirements = ['Click>=7.0', 'librosa>=0.7.2', 'numpy>=1.20.3', 'madmom', 'pretty_midi']
+requirements = ['Click>=7.0', 'librosa>=0.7.2', 'numpy>=1.20.3', 'madmom', 'pretty_midi', 'crepe']
 
 test_requirements = []
 
