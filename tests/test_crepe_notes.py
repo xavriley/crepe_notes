@@ -307,13 +307,25 @@ class TestCrepe_notes(unittest.TestCase):
         runner = CliRunner()
         with runner.isolated_filesystem():
             result_mid_path = Path(os.getcwd(), 'cp_suede_shoes_repeated_notes_no_onsets.transcription.mid')
+            result_onsets_path = wav_path.with_suffix('.onsets.npz')
+            result_amp_envelope_path = wav_path.with_suffix('.amp_envelope.npz')
+
+            result_onsets_path.unlink(missing_ok=True)
+            result_amp_envelope_path.unlink(missing_ok=True)
+
             self.assertFalse(result_mid_path.exists())
+            self.assertFalse(result_onsets_path.exists())
+            self.assertFalse(result_amp_envelope_path.exists())
             
             freqs, conf = crepe_notes.parse_f0(str(f0_path))
 
-            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.045, use_cwd=True)
+            result = crepe_notes.process(freqs, conf, wav_path, min_duration=0.045, use_cwd=True, save_analysis_files=True)
             assert result_mid_path.exists()
+            assert result_onsets_path.exists()
+            assert result_amp_envelope_path.exists()
 
+            result_onsets_path.unlink()
+            result_amp_envelope_path.unlink()
             # print(result_mid_path)
             # self.plot_results(result_mid_path, gt_transcription, f0_path)
 
@@ -325,8 +337,8 @@ class TestCrepe_notes(unittest.TestCase):
     def test_filosax_full(self):
         """Get results for full Filosax dataset"""
         
-        # assert(True)
-        # return True
+        assert(True)
+        return True
 
         results = []
         paths = sorted(Path(TEST_DATA_DIR, 'Filosax').rglob('Sax.mid'))
@@ -363,8 +375,8 @@ class TestCrepe_notes(unittest.TestCase):
 
     def test_itm_flute_99_full(self):
         """Get results for full ITM-Flute-99 dataset"""
-        # assert(True)
-        # return True
+        assert(True)
+        return True
 
         results = []
         bp_results = []

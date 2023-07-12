@@ -89,7 +89,7 @@ def process(freqs,
             save_analysis_files=False,):
     
     cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
-    sr, y, filtered_amp_envelope, detect_amplitude = load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, save_amp_envelope)
+    sr, y, filtered_amp_envelope, detect_amplitude = load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, (save_analysis_files or save_amp_envelope))
 
     if use_cwd:
         # write to location that the bin was run from
