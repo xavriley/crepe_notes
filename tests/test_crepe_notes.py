@@ -325,8 +325,8 @@ class TestCrepe_notes(unittest.TestCase):
     def test_filosax_full(self):
         """Get results for full Filosax dataset"""
         
-        assert(True)
-        return True
+        # assert(True)
+        # return True
 
         results = []
         paths = sorted(Path(TEST_DATA_DIR, 'Filosax').rglob('Sax.mid'))
@@ -352,14 +352,19 @@ class TestCrepe_notes(unittest.TestCase):
                 results.append(metrics)
 
         results = pd.DataFrame(results)
-        print(results.describe())
-        assert(True)
+        results = results.drop([60, 158]) # ignore two files with bad annotations
+        if len(results) > 0:
+            results = pd.DataFrame(results)
+            print(results.describe())
+            print("CREPE Notes")
+            print(results['F-measure_no_offset'].mean())
+            assert(results['F-measure_no_offset'].mean() > 0.90)
+            assert(results['F-measure_no_offset'].mean() < 0.91)
 
     def test_itm_flute_99_full(self):
         """Get results for full ITM-Flute-99 dataset"""
-
-        assert(True)
-        return True
+        # assert(True)
+        # return True
 
         results = []
         bp_results = []
@@ -377,10 +382,13 @@ class TestCrepe_notes(unittest.TestCase):
                 wav_path = Path(path.parent, path.stem.replace('izzy_GT_', '').replace('.gt.repitched-gt','.repitched.rb.wav'))
                 basic_pitch_path = str(wav_path).replace('.rb.wav', '.rb_basic_pitch.mid')
                 
-                freqs, conf = crepe_notes.parse_f0(str(f0_path))
+                if f0_path.exists():
+                    freqs, conf = crepe_notes.parse_f0(str(f0_path))
+                else:
+                    freqs, conf = crepe_notes.run_crepe(wav_path)
 
                 self.assertFalse(result_mid_path.exists())
-                result = crepe_notes.process(freqs, conf, wav_path, use_cwd=True, tuning_offset=0.001)
+                result = crepe_notes.process(freqs, conf, wav_path, use_cwd=True, min_duration=0.03, min_velocity=15, save_amp_envelope=True, save_analysis_files=True)
                 assert(result_mid_path.exists())
 
                 metrics = self.calculate_accuracy_metrics(str(result_mid_path), str(path))
@@ -394,9 +402,20 @@ class TestCrepe_notes(unittest.TestCase):
             print(results.describe())
             print(bp_results.describe())
             print("CREPE Notes")
-            print(results['Onset_F-measure'].mean())
+            print(results['F-measure_no_offset'].mean())
             print("Basic Pitch")
-            print(bp_results['Onset_F-measure'].mean())
+            print(bp_results['F-measure_no_offset'].mean())
+            
+            # NOTE:
+            # I'm not particularly happy with the results here - the flute dataset
+            # has some unresolved issues with different tuning standards. I've tried
+            # to transpose everything to A=440Hz but I'm not sure if it's uniform across
+            # the dataset. As such, I think these need to be taken with a pinch of salt until
+            # I can manually verify the whole set.
+            assert(results['F-measure_no_offset'].mean() > bp_results['F-measure_no_offset'].mean())
+            assert(results['F-measure_no_offset'].mean() > 0.74)
+            assert(results['F-measure_no_offset'].mean() < 0.75)
+            assert(bp_results['F-measure_no_offset'].mean() > 0.67)
 
             
 

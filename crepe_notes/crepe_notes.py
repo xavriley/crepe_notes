@@ -4,9 +4,17 @@ from scipy.signal import find_peaks, hilbert, peak_widths, butter, filtfilt, res
 import numpy as np
 import pretty_midi as pm
 import matplotlib.pyplot as plt
+import crepe
+from scipy.io import wavfile
 
 import os.path
 from pathlib import Path
+
+def run_crepe(audio_path):
+    sr, audio = wavfile.read(str(audio_path))
+    time, frequency, confidence, activation = crepe.predict(audio, sr, viterbi=True)
+    
+    return frequency, confidence
 
 
 def steps_to_samples(step_val, sr, step_size=0.01):
@@ -30,6 +38,10 @@ def calculate_tuning_offset(freqs):
 def parse_f0(f0_path):
     data = np.genfromtxt(f0_path, delimiter=',', names=True)
     return np.nan_to_num(data['frequency']), np.nan_to_num(data['confidence'])
+    
+def save_f0(f0_path, frequency, confidence):
+    np.savetxt(f0_path, np.stack([np.linspace(0, 0.01 * len(frequency), len(frequency)).astype('float'), frequency.astype('float'), confidence.astype('float')], axis=1), fmt='%10.7f', delimiter=',', header='time,frequency,confidence', comments='')
+    return
 
 def load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, save_amp_envelope):
     if cached_amp_envelope_path.exists():
@@ -73,7 +85,8 @@ def process(freqs,
             tuning_offset=False,
             detect_amplitude=True,
             save_amp_envelope=False,
-            default_sample_rate=44100,):
+            default_sample_rate=44100,
+            save_analysis_files=False,):
     
     cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
     sr, y, filtered_amp_envelope, detect_amplitude = load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, save_amp_envelope)
@@ -86,6 +99,12 @@ def process(freqs,
         output_filename = str(audio_path.parent) + "/" + audio_path.stem
 
     print(os.path.abspath(audio_path))
+    
+    if save_analysis_files:
+        f0_path = audio_path.with_suffix(".f0.csv")
+        if not f0_path.exists():
+            print(f"Saving f0 to {f0_path}")
+            save_f0(f0_path, freqs, conf)  
 
     if not disable_splitting:
         onsets_path = str(audio_path.with_suffix('.onsets.npz'))
@@ -96,6 +115,8 @@ def process(freqs,
             from madmom.features import CNNOnsetProcessor
             
             onset_activations = CNNOnsetProcessor()(audio_path)
+            if save_analysis_files:
+                np.savez(onsets_path, activations=onset_activations)
         else:
             print(f"Loading onsets from {onsets_path}")
             onset_activations = np.load(onsets_path, allow_pickle=True)['activations']
