@@ -3,10 +3,10 @@
 
 from setuptools import setup, find_packages
 
-with open('README.rst') as readme_file:
+with open('README.md') as readme_file:
     readme = readme_file.read()
 
-with open('HISTORY.rst') as history_file:
+with open('HISTORY.md') as history_file:
     history = history_file.read()
 
 requirements = ['Click>=7.0', 'librosa>=0.7.2', 'numpy>=1.20.3', 'madmom', 'pretty_midi']
@@ -37,6 +37,7 @@ setup(
     install_requires=requirements,
     license="GNU General Public License v3.0 license",
     long_description=readme + '\n\n' + history,
+    long_description_content_type='text/markdown',
     include_package_data=True,
     keywords='crepe_notes',
     name='crepe_notes',
