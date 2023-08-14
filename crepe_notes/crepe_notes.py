@@ -114,7 +114,7 @@ def process(freqs,
             
             from madmom.features import CNNOnsetProcessor
             
-            onset_activations = CNNOnsetProcessor()(audio_path)
+            onset_activations = CNNOnsetProcessor()(str(audio_path))
             if save_analysis_files:
                 np.savez(onsets_path, activations=onset_activations)
         else:
