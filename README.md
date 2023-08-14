@@ -29,6 +29,7 @@ Installation
 ------------
 
 ```
+pip install tensorflow # if you haven't already
 pip install crepe-notes
 ```
 
