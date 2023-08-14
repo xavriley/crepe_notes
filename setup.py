@@ -41,7 +41,7 @@ setup(
     include_package_data=True,
     keywords='crepe_notes',
     name='crepe_notes',
-    packages=find_packages(include=['crepe_notes', 'crepe_notes.*']),
+    packages=find_packages(exclude=['tests*'],include=['crepe_notes', 'crepe_notes.*']),
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/xavriley/crepe_notes',
