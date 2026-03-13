@@ -12,40 +12,66 @@ CREPE notes
 <!--         :target: https://crepe-notes.readthedocs.io/en/latest/?version=latest -->
 <!--         :alt: Documentation Status -->
 
-Post-processing for CREPE to turn f0 pitch estimates into discrete notes (MIDI)
+Post-processing for the CREPE pitch tracker to turn f0 pitch estimates into discrete notes (MIDI)
 
 https://github.com/xavriley/crepe_notes/assets/369527/4cc895f5-9bfe-47af-809d-0152933dc4c9
 
 [Demo video for pypi users also available here](https://www.youtube.com/watch?v=vFvbedBgLKg)
-  
+
 Features
 --------
 
 * outputs midi notes for monophonic audio
 * include MIDI velocity information
 * includes options to filter notes that are too quiet or too short
+* experimental support for alternative pitch tracking backends (PESTO, PENN, torchcrepe)
 
 Installation
 ------------
 
-```
-pip install tensorflow # if you haven't already
-pip install crepe-notes
+```bash
+pip install crepe-notes[crepe]
 ```
 
-> **Warning**
-> Python 3.10 and above will fail to run, due to [this long running issue](https://github.com/CPJKU/madmom/issues/509) with madmom.
->
-> As a workaround, please run `!pip install -e git+https://github.com/CPJKU/madmom#egg=madmom` after installation
+### macOS / Apple Silicon
+
+The `crepe` package depends on `pkg_resources` at build time, which was removed from `setuptools>=82`. If you get a `ModuleNotFoundError: No module named 'pkg_resources'` error, install with:
+
+```bash
+pip install "setuptools<81"
+pip install crepe --no-build-isolation
+pip install crepe-notes[crepe]
+```
+
+### Experimental backends
+
+The following alternative pitch trackers can be used instead of CREPE. These are **experimental** and have not been fully evaluated — results may differ from the published benchmarks below.
+
+```bash
+# PESTO (lightweight, PyTorch-based, works on Apple Silicon/MPS)
+pip install crepe-notes[pesto]
+
+# PENN (PyTorch-based, works on Apple Silicon/MPS)
+pip install crepe-notes[penn]
+
+# torchcrepe (PyTorch reimplementation of CREPE, works on Apple Silicon/MPS)
+pip install crepe-notes[torchcrepe]
+```
 
 Basic Usage
 -----------
 
-```
+```bash
+# Using CREPE (default, recommended)
 crepe_notes [path_to_original_audio]
+
+# Using an experimental backend
+crepe_notes --pitch-tracker pesto [path_to_original_audio]
+crepe_notes --pitch-tracker penn [path_to_original_audio]
+crepe_notes --pitch-tracker torchcrepe [path_to_original_audio]
 ```
 
-A '.mid' file will be created in the location of the audio file with the name `[audio_file_stem].transcription.mid`.
+A '.mid' file will be created in the current directory with the name `[audio_file_stem].[pitch_tracker].transcription.mid`.
 
 For additional options check out `crepe_notes --help`.
 
@@ -64,7 +90,7 @@ These are the three params you may need to tweak to get optimal results.
 
 If you are running `crepe_notes` over an entire dataset, we recommend using the `--save-analysis-files` flag. This will write the following results:
 
-* crepe to `[audio_file_stem].f0.csv`.
+* pitch tracker output to `[audio_file_stem].[pitch_tracker].f0.csv`
 * madmom onset activations to `[audio_file_stem].onsets.npz`
 * amplitude envelope calculations to `[audio_file_stem].amp_envelope.npz`
 
@@ -98,7 +124,16 @@ Please open a Github issue if you get results for any other public datasets - we
 Caveats
 -------
 
-CREPE only works for monophonic audio, which means CREPE Notes only works for monophonic audio too. If you need polyphonic transcription, check out [Basic Pitch](https://basicpitch.spotify.com/).
+All supported pitch trackers only work for monophonic audio, which means crepe_notes only works for monophonic audio too. If you need polyphonic transcription, check out [Basic Pitch](https://basicpitch.spotify.com/).
+
+### Pitch tracker backends
+
+| Backend | Package | GPU/MPS Support | Status |
+|---------|---------|----------------|--------|
+| [CREPE](https://github.com/marl/crepe) | `crepe_notes[crepe]` | TensorFlow GPU | **Recommended** — fully evaluated, used in published results |
+| [PESTO](https://github.com/SonyCSLParis/pesto) | `crepe_notes[pesto]` | CUDA, MPS (Apple Silicon) | Experimental |
+| [PENN](https://github.com/interactiveaudiolab/penn) | `crepe_notes[penn]` | CUDA, MPS (Apple Silicon) | Experimental |
+| [torchcrepe](https://github.com/maxrmorrison/torchcrepe) | `crepe_notes[torchcrepe]` | CUDA, MPS (Apple Silicon) | Experimental |
 
 Due to the way the algorithm works, repeated notes at the same pitch are treated as a special case and have to fall back to using a standard onset detector (madmom). The results might vary depending on the type of music you want to transcribe. For example, in a jazz saxophone solo it's relatively uncommon to repeat the same note. In a rock bass line however the opposite is true.
 

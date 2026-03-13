@@ -136,7 +136,7 @@ class TestCrepe_notes(unittest.TestCase):
         with runner.isolated_filesystem():
             result = runner.invoke(cli.main, ['--min-duration', '0.0001', '--min-velocity', '0', '--disable-splitting', '--use-cwd',
                                               str(wav_path)])
-            result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
+            result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.crepe.transcription.mid')
 
             assert result_mid_path.exists()
             assert result.exit_code == 0
@@ -150,7 +150,7 @@ class TestCrepe_notes(unittest.TestCase):
         with runner.isolated_filesystem():
             result = runner.invoke(cli.main, ['--min-duration', '0.0001', '--min-velocity', '0', '--disable-splitting', '--use-cwd',
                                               '--f0', str(f0_path), str(wav_path)])
-            result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.transcription.mid')
+            result_mid_path = Path(os.getcwd(), 'sonny-stitt-lick.crepe.transcription.mid')
 
             assert result_mid_path.exists()
             assert result.exit_code == 0

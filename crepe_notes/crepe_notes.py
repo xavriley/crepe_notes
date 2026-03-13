@@ -4,17 +4,163 @@ from scipy.signal import find_peaks, hilbert, peak_widths, butter, filtfilt, res
 import numpy as np
 import pretty_midi as pm
 import matplotlib.pyplot as plt
-import crepe
 from scipy.io import wavfile
 
 import os.path
+import platform
 from pathlib import Path
 
+
+def _get_torch_device():
+    """Select the best available torch device (MPS for Apple Silicon, CUDA, or CPU)."""
+    import torch
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return torch.device('mps')
+    elif torch.cuda.is_available():
+        return torch.device('cuda')
+    return torch.device('cpu')
+
+
 def run_crepe(audio_path):
-    sr, audio = wavfile.read(str(audio_path))
-    time, frequency, confidence, activation = crepe.predict(audio, sr, viterbi=True)
-    
+    try:
+        import crepe
+    except ImportError:
+        raise ImportError(
+            "crepe is not installed. Install it with: pip install crepe_notes[crepe]"
+        )
+    from tqdm import tqdm
+
+    audio, sr = load(str(audio_path), sr=None, mono=True)
+    with tqdm(total=1, desc="CREPE inference", bar_format="{desc}: {elapsed}") as pbar:
+        time, frequency, confidence, activation = crepe.predict(audio, sr, viterbi=True)
+        pbar.update(1)
+
     return frequency, confidence
+
+
+def run_pesto(audio_path):
+    try:
+        import pesto
+        import torchaudio
+    except ImportError:
+        raise ImportError(
+            "pesto-pitch is not installed. Install it with: pip install crepe_notes[pesto]"
+        )
+    from tqdm import tqdm
+
+    x, sr = torchaudio.load(str(audio_path))
+    x = x.mean(dim=0)  # mono
+    device = _get_torch_device()
+    x = x.to(device)
+    with tqdm(total=1, desc="PESTO inference", bar_format="{desc}: {elapsed}") as pbar:
+        timesteps, pitch, confidence, activations = pesto.predict(
+            x, sr, step_size=10.0
+        )
+        pbar.update(1)
+    return pitch.cpu().numpy(), confidence.cpu().numpy()
+
+
+def run_penn(audio_path):
+    try:
+        import penn
+        from penn.core import preprocess, infer, postprocess
+    except ImportError:
+        raise ImportError(
+            "penn is not installed. Install it with: pip install crepe_notes[penn]"
+        )
+    import torch
+    import torchaudio
+    from tqdm import tqdm
+
+    device = _get_torch_device()
+    gpu = 0 if device.type == 'cuda' else None
+
+    audio, sr = torchaudio.load(str(audio_path))
+    if audio.shape[0] > 1:
+        audio = audio.mean(dim=0, keepdim=True)  # downmix to mono
+
+    batch_size = 2048
+    hopsize = 0.01
+    center = 'half-window'
+
+    # Estimate total frames for progress bar
+    total_samples = audio.shape[-1]
+    hop_samples = int(sr * hopsize)
+    total_frames = total_samples // hop_samples
+
+    # Chunked inference with progress bar, accumulate logits for viterbi decoding
+    logits = []
+    with tqdm(total=total_frames, desc="PENN inference", unit="frames") as pbar:
+        for frames in preprocess(audio, sr, hopsize, batch_size, center):
+            frames = frames.to(device)
+            inferred = infer(frames).detach()
+            logits.append(inferred.cpu())
+            pbar.update(len(frames))
+
+    # Viterbi decode over full sequence (on CPU — torbi doesn't support MPS)
+    decode_device = device if device.type == 'cuda' else torch.device('cpu')
+    all_logits = torch.cat(logits, 0).to(decode_device)
+    _, pitch, periodicity = postprocess(all_logits)
+    return pitch[0].cpu().numpy(), periodicity[0].cpu().numpy()
+
+
+def run_torchcrepe(audio_path):
+    try:
+        import torchcrepe
+        import torchaudio
+    except ImportError:
+        raise ImportError(
+            "torchcrepe is not installed. Install it with: pip install crepe_notes[torchcrepe]"
+        )
+    from tqdm import tqdm
+
+    device = _get_torch_device()
+    audio, sr = torchaudio.load(str(audio_path))
+    if audio.shape[0] > 1:
+        audio = audio.mean(dim=0, keepdim=True)  # downmix to mono
+
+    # Estimate total frames for progress bar
+    hop_length = sr // 100
+    total_frames = 1 + audio.shape[-1] // hop_length
+    batch_size = 2048
+    total_batches = (total_frames + batch_size - 1) // batch_size
+
+    with tqdm(total=total_batches, desc="torchcrepe inference", unit="batch") as pbar:
+        pitch, periodicity = torchcrepe.predict(
+            audio, sr,
+            hop_length=hop_length,
+            fmin=50.,
+            fmax=2006.,
+            model='full',
+            decoder=torchcrepe.decode.viterbi,
+            return_periodicity=True,
+            batch_size=batch_size,
+            device=str(device),
+        )
+        pbar.update(total_batches)
+    pitch_np = pitch[0].cpu().numpy()
+    periodicity_np = periodicity[0].cpu().numpy()
+    # Zero out pitch for unvoiced frames (low periodicity) so the
+    # downstream algorithm treats them as silence rather than fmax artifacts
+    pitch_np[periodicity_np < 0.21] = 0.0
+    return pitch_np, periodicity_np
+
+
+PITCH_TRACKERS = {
+    'crepe': run_crepe,
+    'pesto': run_pesto,
+    'penn': run_penn,
+    'torchcrepe': run_torchcrepe,
+}
+
+
+def run_pitch_tracker(audio_path, tracker='crepe'):
+    """Run the specified pitch tracker and return (frequency, confidence) arrays."""
+    if tracker not in PITCH_TRACKERS:
+        raise ValueError(
+            f"Unknown pitch tracker '{tracker}'. Choose from: {', '.join(PITCH_TRACKERS.keys())}"
+        )
+    return PITCH_TRACKERS[tracker](audio_path)
 
 
 def steps_to_samples(step_val, sr, step_size=0.01):
@@ -86,7 +232,8 @@ def process(freqs,
             detect_amplitude=True,
             save_amp_envelope=False,
             default_sample_rate=44100,
-            save_analysis_files=False,):
+            save_analysis_files=False,
+            pitch_tracker='crepe',):
     
     cached_amp_envelope_path = audio_path.with_suffix(".amp_envelope.npz")
     sr, y, filtered_amp_envelope, detect_amplitude = load_audio(audio_path, cached_amp_envelope_path, default_sample_rate, detect_amplitude, (save_analysis_files or save_amp_envelope))
@@ -101,10 +248,10 @@ def process(freqs,
     print(os.path.abspath(audio_path))
     
     if save_analysis_files:
-        f0_path = audio_path.with_suffix(".f0.csv")
+        f0_path = audio_path.with_suffix(f".{pitch_tracker}.f0.csv")
         if not f0_path.exists():
             print(f"Saving f0 to {f0_path}")
-            save_f0(f0_path, freqs, conf)  
+            save_f0(f0_path, freqs, conf)
 
     if not disable_splitting:
         onsets_path = str(audio_path.with_suffix('.onsets.npz'))
