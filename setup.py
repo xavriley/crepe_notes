@@ -14,7 +14,7 @@ requirements = [
     'librosa>=0.10.0',
     'numpy>=2.0',
     'scipy>=1.13',
-    'madmom @ git+https://github.com/CPJKU/madmom@main',
+    'madmom',
     'pretty_midi',
     'tqdm',
 ]

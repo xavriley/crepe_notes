@@ -33,6 +33,14 @@ Installation
 pip install crepe-notes[crepe]
 ```
 
+### Python 3.10+
+
+The PyPI version of madmom has a known compatibility issue with Python 3.10+. After installing, replace it with the version from git:
+
+```bash
+pip install git+https://github.com/CPJKU/madmom@main
+```
+
 ### macOS / Apple Silicon
 
 The `crepe` package depends on `pkg_resources` at build time, which was removed from `setuptools>=82`. If you get a `ModuleNotFoundError: No module named 'pkg_resources'` error, install with:
